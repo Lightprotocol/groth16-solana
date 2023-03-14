@@ -2,6 +2,8 @@
 name = "groth16-solana"
 version = "0.0.1"
 edition = "2021"
+description = "groth16 verification with solana alt_bn128 syscalls"
+license = "MIT"
 
 [dependencies]
 solana-program = "1.15.2"
