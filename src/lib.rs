@@ -45,5 +45,6 @@
 //!
 //! See functional test for a running example how to use this library.
 //!
+pub mod decompression;
 pub mod errors;
 pub mod groth16;
