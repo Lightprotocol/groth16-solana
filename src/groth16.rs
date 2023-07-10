@@ -5,14 +5,13 @@
 //! }
 //!
 //! let proof_a: G1 =
-//!     <G1 as FromBytes>::read(&*[&change_endianness(&PROOF[0..64])[..], &[0u8][..]].concat())
-//!         .unwrap();
+//!     <G1 as FromBytes>::read(&*[&change_endianness(&PROOF[0..64])[..], &[0u8][..]].concat())?;
 //! let mut proof_a_neg = [0u8; 65];
-//! <G1 as ToBytes>::write(&proof_a.neg(), &mut proof_a_neg[..]).unwrap();
+//! <G1 as ToBytes>::write(&proof_a.neg(), &mut proof_a_neg[..])?;
 //!
-//! let proof_a = change_endianness(&proof_a_neg[..64]).try_into().unwrap();
-//! let proof_b = PROOF[64..192].try_into().unwrap();
-//! let proof_c = PROOF[192..256].try_into().unwrap();
+//! let proof_a = change_endianness(&proof_a_neg[..64]).try_into()?;
+//! let proof_b = PROOF[64..192].try_into()?;
+//! let proof_c = PROOF[192..256].try_into()?;
 //!
 //! let mut verifier = Groth16Verifier::new(
 //!     &proof_a,
@@ -20,9 +19,8 @@
 //!     &proof_c,
 //!     public_inputs_vec.as_slice(),
 //!     &VERIFYING_KEY,
-//! )
-//! .unwrap();
-//! verifier.verify().unwrap();
+//! )?;
+//! verifier.verify()?;
 //! ```
 //!
 //! See functional test for a running example how to use this library.
@@ -94,12 +92,12 @@ impl Groth16Verifier<'_> {
             let mul_res = alt_bn128_multiplication(
                 &[&self.verifyingkey.vk_ic[i + 1][..], &input[..]].concat(),
             )
-            .unwrap();
+            .map_err(|_| Groth16Error::PreparingInputsG1MulFailed)?;
             prepared_public_inputs =
                 alt_bn128_addition(&[&mul_res[..], &prepared_public_inputs[..]].concat())
-                    .unwrap()
+                    .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?[..]
                     .try_into()
-                    .unwrap();
+                    .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?;
         }
 
         self.prepared_public_inputs = prepared_public_inputs;
@@ -122,7 +120,8 @@ impl Groth16Verifier<'_> {
         ]
         .concat();
 
-        let pairing_res = alt_bn128_pairing(pairing_input.as_slice()).unwrap();
+        let pairing_res = alt_bn128_pairing(pairing_input.as_slice())
+            .map_err(|_| Groth16Error::ProofVerificationFailed)?;
 
         if pairing_res[31] != 1 {
             return Err(Groth16Error::ProofVerificationFailed);
@@ -136,9 +135,10 @@ mod tests {
     use super::*;
     use crate::groth16::{Groth16Verifier, Groth16Verifyingkey};
     use ark_bn254;
-    use ark_ec;
-    use ark_ff::bytes::{FromBytes, ToBytes};
+    use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
+
     use std::ops::Neg;
+    type G1 = ark_bn254::g1::G1Affine;
 
     pub const VERIFYING_KEY: Groth16Verifyingkey = Groth16Verifyingkey {
         nr_pubinputs: 10,
@@ -243,7 +243,6 @@ mod tests {
             ],
         ],
     };
-    type G1 = ark_ec::short_weierstrass_jacobian::GroupAffine<ark_bn254::g1::Parameters>;
 
     fn change_endianness(bytes: &[u8]) -> Vec<u8> {
         let mut vec = Vec::new();
