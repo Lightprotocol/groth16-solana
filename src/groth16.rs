@@ -42,23 +42,23 @@ pub struct Groth16Verifyingkey<'a> {
 }
 
 #[derive(PartialEq, Eq, Debug)]
-pub struct Groth16Verifier<'a> {
+pub struct Groth16Verifier<'a, const NR_INPUTS: usize> {
     proof_a: &'a [u8; 64],
     proof_b: &'a [u8; 128],
     proof_c: &'a [u8; 64],
-    public_inputs: &'a [&'a [u8]],
+    public_inputs: &'a [[u8; 32]; NR_INPUTS],
     prepared_public_inputs: [u8; 64],
     verifyingkey: &'a Groth16Verifyingkey<'a>,
 }
 
-impl Groth16Verifier<'_> {
+impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
     pub fn new<'a>(
         proof_a: &'a [u8; 64],
         proof_b: &'a [u8; 128],
         proof_c: &'a [u8; 64],
-        public_inputs: &'a [&'a [u8]],
+        public_inputs: &'a [[u8; 32]; NR_INPUTS],
         verifyingkey: &'a Groth16Verifyingkey<'a>,
-    ) -> Result<Groth16Verifier<'a>, Groth16Error> {
+    ) -> Result<Groth16Verifier<'a, NR_INPUTS>, Groth16Error> {
         if proof_a.len() != 64 {
             return Err(Groth16Error::InvalidG1Length);
         }
@@ -133,7 +133,6 @@ impl Groth16Verifier<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::groth16::{Groth16Verifier, Groth16Verifyingkey};
     use ark_bn254;
     use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
 
@@ -254,21 +253,43 @@ mod tests {
         vec
     }
 
-    pub const PUBLIC_INPUTS: [u8; 9 * 32] = [
-        34, 238, 251, 182, 234, 248, 214, 189, 46, 67, 42, 25, 71, 58, 145, 58, 61, 28, 116, 110,
-        60, 17, 82, 149, 178, 187, 160, 211, 37, 226, 174, 231, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 51, 152, 17, 147, 4, 247, 199, 87, 230, 85,
-        103, 90, 28, 183, 95, 100, 200, 46, 3, 158, 247, 196, 173, 146, 207, 167, 108, 33, 199, 18,
-        13, 204, 198, 101, 223, 186, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 7, 49, 65, 41, 7, 130, 55, 65, 197, 232, 175, 217, 44, 151, 149, 225,
-        75, 86, 158, 105, 43, 229, 65, 87, 51, 150, 168, 243, 176, 175, 11, 203, 180, 149, 72, 103,
-        46, 93, 177, 62, 42, 66, 223, 153, 51, 193, 146, 49, 154, 41, 69, 198, 224, 13, 87, 80,
-        222, 171, 37, 141, 0, 1, 50, 172, 18, 28, 213, 213, 40, 141, 45, 3, 180, 200, 250, 112,
-        108, 94, 35, 143, 82, 63, 125, 9, 147, 37, 191, 75, 62, 221, 138, 20, 166, 151, 219, 237,
-        254, 58, 230, 189, 33, 100, 143, 241, 11, 251, 73, 141, 229, 57, 129, 168, 83, 23, 235,
-        147, 138, 225, 177, 250, 13, 97, 226, 162, 6, 232, 52, 95, 128, 84, 90, 202, 25, 178, 1,
-        208, 219, 169, 222, 123, 113, 202, 165, 77, 183, 98, 103, 237, 187, 93, 178, 95, 169, 156,
-        38, 100, 125, 218, 104, 94, 104, 119, 13, 21,
+    pub const PUBLIC_INPUTS: [[u8; 32]; 9] = [
+        [
+            34, 238, 251, 182, 234, 248, 214, 189, 46, 67, 42, 25, 71, 58, 145, 58, 61, 28, 116,
+            110, 60, 17, 82, 149, 178, 187, 160, 211, 37, 226, 174, 231,
+        ],
+        [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 51,
+            152, 17, 147,
+        ],
+        [
+            4, 247, 199, 87, 230, 85, 103, 90, 28, 183, 95, 100, 200, 46, 3, 158, 247, 196, 173,
+            146, 207, 167, 108, 33, 199, 18, 13, 204, 198, 101, 223, 186,
+        ],
+        [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7,
+            49, 65, 41,
+        ],
+        [
+            7, 130, 55, 65, 197, 232, 175, 217, 44, 151, 149, 225, 75, 86, 158, 105, 43, 229, 65,
+            87, 51, 150, 168, 243, 176, 175, 11, 203, 180, 149, 72, 103,
+        ],
+        [
+            46, 93, 177, 62, 42, 66, 223, 153, 51, 193, 146, 49, 154, 41, 69, 198, 224, 13, 87, 80,
+            222, 171, 37, 141, 0, 1, 50, 172, 18, 28, 213, 213,
+        ],
+        [
+            40, 141, 45, 3, 180, 200, 250, 112, 108, 94, 35, 143, 82, 63, 125, 9, 147, 37, 191, 75,
+            62, 221, 138, 20, 166, 151, 219, 237, 254, 58, 230, 189,
+        ],
+        [
+            33, 100, 143, 241, 11, 251, 73, 141, 229, 57, 129, 168, 83, 23, 235, 147, 138, 225,
+            177, 250, 13, 97, 226, 162, 6, 232, 52, 95, 128, 84, 90, 202,
+        ],
+        [
+            25, 178, 1, 208, 219, 169, 222, 123, 113, 202, 165, 77, 183, 98, 103, 237, 187, 93,
+            178, 95, 169, 156, 38, 100, 125, 218, 104, 94, 104, 119, 13, 21,
+        ],
     ];
 
     pub const PROOF: [u8; 256] = [
@@ -288,11 +309,6 @@ mod tests {
     ];
     #[test]
     fn proof_verification_should_succeed() {
-        let mut public_inputs_vec = Vec::new();
-        for input in PUBLIC_INPUTS.chunks(32) {
-            public_inputs_vec.push(input);
-        }
-
         let proof_a: G1 = G1::deserialize_with_mode(
             &*[&change_endianness(&PROOF[0..64]), &[0u8][..]].concat(),
             Compress::No,
@@ -318,23 +334,14 @@ mod tests {
         let proof_b = PROOF[64..192].try_into().unwrap();
         let proof_c = PROOF[192..256].try_into().unwrap();
 
-        let mut verifier = Groth16Verifier::new(
-            &proof_a,
-            &proof_b,
-            &proof_c,
-            public_inputs_vec.as_slice(),
-            &VERIFYING_KEY,
-        )
-        .unwrap();
+        let mut verifier =
+            Groth16Verifier::new(&proof_a, &proof_b, &proof_c, &PUBLIC_INPUTS, &VERIFYING_KEY)
+                .unwrap();
         verifier.verify().unwrap();
     }
 
     #[test]
     fn proof_verification_with_compressed_inputs_should_succeed() {
-        let mut public_inputs_vec = Vec::new();
-        for input in PUBLIC_INPUTS.chunks(32) {
-            public_inputs_vec.push(input);
-        }
         let proof_a: G1 = G1::deserialize_with_mode(
             &*[&change_endianness(&PROOF[0..64]), &[0u8][..]].concat(),
             Compress::No,
@@ -343,8 +350,6 @@ mod tests {
         .unwrap();
         let mut res = [0u8; 32];
         G1::serialize_compressed(&proof_a, res.as_mut()).unwrap();
-
-        let proof_a_compressed = proof_a.x;
 
         assert_eq!(
             PROOF[0..32]
@@ -390,14 +395,9 @@ mod tests {
         let proof_b = PROOF[64..192].try_into().unwrap();
         let proof_c = PROOF[192..256].try_into().unwrap();
 
-        let mut verifier = Groth16Verifier::new(
-            &proof_a,
-            &proof_b,
-            &proof_c,
-            public_inputs_vec.as_slice(),
-            &VERIFYING_KEY,
-        )
-        .unwrap();
+        let mut verifier =
+            Groth16Verifier::new(&proof_a, &proof_b, &proof_c, &PUBLIC_INPUTS, &VERIFYING_KEY)
+                .unwrap();
         verifier.verify().unwrap();
     }
     // #[test]
