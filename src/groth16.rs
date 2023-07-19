@@ -315,10 +315,7 @@ mod tests {
             Validate::Yes,
         )
         .unwrap();
-        // <G1 as FromBytes>::read(&*[&change_endianness(&PROOF[0..64])[..], &[0u8][..]].concat())
-        //     .unwrap();
         let mut proof_a_neg = [0u8; 65];
-        // <G1 as ToBytes>::write(&proof_a.neg(), &mut proof_a_neg[..]).unwrap();
         proof_a
             .neg()
             .x
