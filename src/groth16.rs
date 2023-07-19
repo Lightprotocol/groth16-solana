@@ -286,7 +286,6 @@ mod tests {
         139, 253, 65, 152, 92, 209, 53, 37, 25, 83, 61, 252, 42, 181, 243, 16, 21, 2, 199, 123, 96,
         218, 151, 253, 86, 69, 181, 202, 109, 64, 129, 124, 254, 192, 25, 177, 199, 26, 50,
     ];
-
     #[test]
     fn proof_verification_should_succeed() {
         let mut public_inputs_vec = Vec::new();
@@ -294,11 +293,26 @@ mod tests {
             public_inputs_vec.push(input);
         }
 
-        let proof_a: G1 =
-            <G1 as FromBytes>::read(&*[&change_endianness(&PROOF[0..64])[..], &[0u8][..]].concat())
-                .unwrap();
+        let proof_a: G1 = G1::deserialize_with_mode(
+            &*[&change_endianness(&PROOF[0..64]), &[0u8][..]].concat(),
+            Compress::No,
+            Validate::Yes,
+        )
+        .unwrap();
+        // <G1 as FromBytes>::read(&*[&change_endianness(&PROOF[0..64])[..], &[0u8][..]].concat())
+        //     .unwrap();
         let mut proof_a_neg = [0u8; 65];
-        <G1 as ToBytes>::write(&proof_a.neg(), &mut proof_a_neg[..]).unwrap();
+        // <G1 as ToBytes>::write(&proof_a.neg(), &mut proof_a_neg[..]).unwrap();
+        proof_a
+            .neg()
+            .x
+            .serialize_with_mode(&mut proof_a_neg[..32], Compress::No)
+            .unwrap();
+        proof_a
+            .neg()
+            .y
+            .serialize_with_mode(&mut proof_a_neg[32..], Compress::No)
+            .unwrap();
 
         let proof_a = change_endianness(&proof_a_neg[..64]).try_into().unwrap();
         let proof_b = PROOF[64..192].try_into().unwrap();
@@ -315,6 +329,63 @@ mod tests {
         verifier.verify().unwrap();
     }
 
+    #[test]
+    fn proof_verification_with_compressed_inputs_should_succeed() {
+        let mut public_inputs_vec = Vec::new();
+        for input in PUBLIC_INPUTS.chunks(32) {
+            public_inputs_vec.push(input);
+        }
+        let proof_a: G1 = G1::deserialize_with_mode(
+            &*[&change_endianness(&PROOF[0..64]), &[0u8][..]].concat(),
+            Compress::No,
+            Validate::Yes,
+        )
+        .unwrap();
+        let mut res = [0u8; 32];
+        G1::serialize_compressed(&proof_a, res.as_mut()).unwrap();
+
+        assert_eq!(
+            PROOF[0..32]
+                .to_vec()
+                .clone()
+                .iter()
+                .rev()
+                .collect::<Vec<&u8>>(),
+            res.iter().collect::<Vec<&u8>>(),
+        );
+
+        let proof_a_uncompressed: G1 = G1::deserialize_compressed(
+            &[&change_endianness(&PROOF[0..64]), &[0u8][..]].concat()[0..32],
+        )
+        .unwrap();
+
+        let mut proof_a_neg = [0u8; 65];
+        // <G1 as ToBytes>::write(&proof_a.neg(), &mut proof_a_neg[..]).unwrap();
+        proof_a_uncompressed
+            .neg()
+            .x
+            .serialize_with_mode(&mut proof_a_neg[..32], Compress::No)
+            .unwrap();
+        proof_a_uncompressed
+            .neg()
+            .y
+            .serialize_with_mode(&mut proof_a_neg[32..], Compress::No)
+            .unwrap();
+
+        let proof_a = change_endianness(&proof_a_neg[..64]).try_into().unwrap();
+        let proof_b = PROOF[64..192].try_into().unwrap();
+        let proof_c = PROOF[192..256].try_into().unwrap();
+
+        let mut verifier = Groth16Verifier::new(
+            &proof_a,
+            &proof_b,
+            &proof_c,
+            public_inputs_vec.as_slice(),
+            &VERIFYING_KEY,
+        )
+        .unwrap();
+        verifier.verify().unwrap();
+    }
     #[test]
     fn wrong_proof_verification_should_not_succeed() {
         let mut public_inputs_vec = Vec::new();

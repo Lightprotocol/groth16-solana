@@ -42,7 +42,6 @@ pub fn decompress_g2(g2_bytes: &[u8]) -> Result<[u8; 128], Groth16Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::groth16::{Groth16Verifier, Groth16Verifyingkey};
     use ark_bn254;
     use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
 
@@ -155,29 +154,15 @@ mod tests {
         let mut new_proof_b_bytes = le_proof_b_bytes[0..64].to_vec();
         let proof_b_uncompressed =
             G2::deserialize_with_mode(&le_proof_b_bytes[..], Compress::No, Validate::Yes).unwrap();
-        let mut mask = proof_b_uncompressed.to_flags().u8_bitmask();
+        let mask = proof_b_uncompressed.to_flags().u8_bitmask();
 
         println!("proof_c {}", proof_b_uncompressed);
         println!("to_flags {:?}", proof_b_uncompressed.to_flags());
         new_proof_b_bytes[index] |= mask;
         println!("new_proof_b_bytes[index] {}", new_proof_b_bytes[index]);
 
-        // let g2_zero = G2::zero();
-        // let mut serialized_uncompressed = [0u8; 128];
-        // G2::serialize_uncompressed(&g2_zero, serialized_uncompressed.as_mut()).unwrap();
-        // let mut serialized_compressed = [0u8; 64];
-        // G2::serialize_compressed(&g2_zero, serialized_compressed.as_mut()).unwrap();
-        // println!("serialized_compressed {:?}", serialized_compressed);
-        // G2::deserialize_with_mode(&serialized_uncompressed[..], Compress::No, Validate::No)
-        //     .unwrap();
-
-        // G2::deserialize_with_mode(&serialized_compressed[..], Compress::Yes, Validate::No).unwrap();
         let mut serialized_compressed = [0u8; 64];
         G2::serialize_compressed(&proof_b_uncompressed, serialized_compressed.as_mut()).unwrap();
-
-        // G2::deserialize_with_mode(&le_proof_b_bytes[..], Compress::No, Validate::No).unwrap();
-
-        // G2::deserialize_with_mode(&serialized_compressed[..], Compress::Yes, Validate::No).unwrap();
 
         assert_eq!(
             serialized_compressed[0..32].to_vec(),
@@ -206,7 +191,7 @@ mod tests {
         let proof_c_uncompressed =
             G1::deserialize_uncompressed(&change_endianness(&PROOF[192..])[..]).unwrap();
 
-        let mut mask = proof_c_uncompressed.to_flags().u8_bitmask();
+        let mask = proof_c_uncompressed.to_flags().u8_bitmask();
         let mut new_proof_c_bytes = change_endianness(&PROOF[192..])[0..32].to_vec();
         new_proof_c_bytes[index] |= mask;
         println!("new_proof_c_bytes[index] {}", new_proof_c_bytes[index]);
