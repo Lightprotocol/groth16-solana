@@ -1,15 +1,17 @@
 [package]
 name = "groth16-solana"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 description = "groth16 verification with solana alt_bn128 syscalls"
 license = "MIT"
 
 [dependencies]
-solana-program = "1.15.2"
+solana-program = "1.16.4"
 thiserror = "1.0"
 
+
 [dev-dependencies]
-ark-ec = "0.3.0"
-ark-bn254 = "0.3.0"
-ark-ff = "0.3.0"
+ark-ec = "0.4.2"
+ark-ff = "0.4.2"
+ark-bn254 = "0.4.0"
+ark-serialize = "0.4.2"
