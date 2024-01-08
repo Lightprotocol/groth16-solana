@@ -16,4 +16,8 @@ pub enum Groth16Error {
     InvalidG2Length,
     #[error("InvalidPublicInputsLength")]
     InvalidPublicInputsLength,
+    #[error("DecompressingG1Failed")]
+    DecompressingG1Failed,
+    #[error("DecompressingG2Failed")]
+    DecompressingG2Failed,
 }
