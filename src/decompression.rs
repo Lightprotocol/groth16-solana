@@ -3,40 +3,57 @@ use std::ops::Neg;
 use crate::errors::Groth16Error;
 use ark_bn254;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress};
-
+use solana_program::alt_bn128::compression::prelude::{
+    alt_bn128_g1_decompress, alt_bn128_g2_decompress,
+};
 type G1 = ark_bn254::g1::G1Affine;
 type G2 = ark_bn254::g2::G2Affine;
 
 pub fn decompress_g1(g1_bytes: &[u8], negate: bool) -> Result<[u8; 64], Groth16Error> {
-    let decompressed_g1 = if negate {
-        G1::deserialize_compressed(g1_bytes).unwrap().neg()
-    } else {
-        G1::deserialize_compressed(g1_bytes).unwrap()
-    };
-    let mut decompressed_g1_bytes = [0u8; 64];
-    decompressed_g1
-        .x
-        .serialize_with_mode(&mut decompressed_g1_bytes[..32], Compress::No)
-        .map_err(|_| crate::errors::Groth16Error::DecompressingG2Failed)?;
-    decompressed_g1
-        .y
-        .serialize_with_mode(&mut decompressed_g1_bytes[32..], Compress::No)
-        .map_err(|_| crate::errors::Groth16Error::DecompressingG2Failed)?;
-    Ok(decompressed_g1_bytes)
+    let decompressed_g1 = alt_bn128_g1_decompress(g1_bytes)
+        .map_err(|_| crate::errors::Groth16Error::DecompressingG1Failed {})?;
+    // let decompressed_g1 = if negate {
+    //     G1::deserialize_compressed(g1_bytes).unwrap().neg()
+    // } else {
+    //     G1::deserialize_compressed(g1_bytes).unwrap()
+    // };
+    // let mut decompressed_g1_bytes = [0u8; 64];
+    // decompressed_g1
+    //     .x
+    //     .serialize_with_mode(&mut decompressed_g1_bytes[..32], Compress::No)
+    //     .map_err(|_| crate::errors::Groth16Error::DecompressingG2Failed)?;
+    // decompressed_g1
+    //     .y
+    //     .serialize_with_mode(&mut decompressed_g1_bytes[32..], Compress::No)
+    //     .map_err(|_| crate::errors::Groth16Error::DecompressingG2Failed)?;
+    // let mut proof_a_neg = [0u8; 64];
+    // proof_a_uncompreseed
+    //     .neg()
+    //     .x
+    //     .serialize_with_mode(&mut proof_a_neg[..32], Compress::No)
+    //     .unwrap();
+    // proof_a_uncompreseed
+    //     .neg()
+    //     .y
+    //     .serialize_with_mode(&mut proof_a_neg[32..], Compress::No)
+    //     .unwrap();
+    Ok(decompressed_g1)
 }
 
 pub fn decompress_g2(g2_bytes: &[u8]) -> Result<[u8; 128], Groth16Error> {
-    let decompressed_g2 = G2::deserialize_compressed(g2_bytes).unwrap();
-    let mut decompressed_g2_bytes = [0u8; 128];
-    decompressed_g2
-        .x
-        .serialize_with_mode(&mut decompressed_g2_bytes[..64], Compress::No)
-        .map_err(|_| crate::errors::Groth16Error::DecompressingG2Failed)?;
-    decompressed_g2
-        .y
-        .serialize_with_mode(&mut decompressed_g2_bytes[64..128], Compress::No)
-        .map_err(|_| crate::errors::Groth16Error::DecompressingG2Failed)?;
-    Ok(decompressed_g2_bytes)
+    let decompressed_g2 = alt_bn128_g2_decompress(g2_bytes)
+        .map_err(|_| crate::errors::Groth16Error::DecompressingG2Failed {})?;
+    // let decompressed_g2 = G2::deserialize_compressed(g2_bytes).unwrap();
+    // let mut decompressed_g2_bytes = [0u8; 128];
+    // decompressed_g2
+    //     .x
+    //     .serialize_with_mode(&mut decompressed_g2_bytes[..64], Compress::No)
+    //     .map_err(|_| crate::errors::Groth16Error::DecompressingG2Failed)?;
+    // decompressed_g2
+    //     .y
+    //     .serialize_with_mode(&mut decompressed_g2_bytes[64..128], Compress::No)
+    //     .map_err(|_| crate::errors::Groth16Error::DecompressingG2Failed)?;
+    Ok(decompressed_g2)
 }
 
 #[cfg(test)]
