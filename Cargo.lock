@@ -610,6 +610,7 @@ dependencies = [
  "ark-ec",
  "ark-ff",
  "ark-serialize",
+ "ark-std",
  "array-bytes",
  "bytemuck",
  "serde",
