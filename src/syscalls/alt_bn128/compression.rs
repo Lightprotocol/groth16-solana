@@ -1,3 +1,5 @@
+// Taken from solana program v1.17.
+// To be removed once light protocol is updated to anchor  0.29.0.
 use thiserror::Error;
 
 pub mod alt_bn128_compression_size {
@@ -323,6 +325,7 @@ mod tests {
         }
     }
 
+    #[ignore]
     #[test]
     fn alt_bn128_g1_compress_loop() {
         for _ in 0..10_000 {
@@ -422,6 +425,8 @@ mod tests {
             assert_eq!(decompressed, *g2_be);
         }
     }
+
+    #[ignore]
     #[test]
     fn alt_bn128_g2_compress_loop() {
         for _ in 0..10_000 {

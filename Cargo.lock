@@ -612,7 +612,6 @@ dependencies = [
  "ark-serialize",
  "ark-std",
  "array-bytes",
- "bytemuck",
  "serde",
  "serde_json",
  "solana-program",

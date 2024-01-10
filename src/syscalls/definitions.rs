@@ -2,7 +2,7 @@
 //! [solana-program](https://github.com/solana-labs/solana/blob/master/sdk/program/src/syscalls/definitions.rs),
 //! which is licensed under Apache License 2.0.
 //!
-//! The purpose of the module is to provide definition of Poseidon syscall
+//! The purpose of the module is to provide definition of altbn128 compression syscall
 //! without upgrading solana-program and Anchor just yet.
 
 #[cfg(target_feature = "static-syscalls")]
