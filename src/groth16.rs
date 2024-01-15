@@ -132,12 +132,16 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
 
 #[cfg(test)]
 mod tests {
+    use crate::decompression::{decompress_g1, decompress_g2};
+
     use super::*;
     use ark_bn254;
     use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
 
     use std::ops::Neg;
     type G1 = ark_bn254::g1::G1Affine;
+    type G2 = ark_bn254::g2::G2Affine;
+    use crate::syscalls::alt_bn128::compression::target_arch::convert_endianness;
 
     pub const VERIFYING_KEY: Groth16Verifyingkey = Groth16Verifyingkey {
         nr_pubinputs: 10,
@@ -337,10 +341,41 @@ mod tests {
         verifier.verify().unwrap();
     }
 
+    fn compress_g1_be(g1: &[u8; 64]) -> [u8; 32] {
+        let g1 = convert_endianness::<32, 64>(g1);
+        let mut compressed = [0u8; 32];
+        let g1 = G1::deserialize_with_mode(g1.as_slice(), Compress::No, Validate::Yes).unwrap();
+        G1::serialize_with_mode(&g1, &mut compressed[..], Compress::Yes).unwrap();
+
+        convert_endianness::<32, 32>(&compressed)
+            .try_into()
+            .unwrap()
+    }
+
+    fn compress_g2_be(g2: &[u8; 128]) -> [u8; 64] {
+        let g2: [u8; 128] = convert_endianness::<64, 128>(g2);
+
+        let mut compressed = [0u8; 64];
+        let g2 = G2::deserialize_with_mode(g2.as_slice(), Compress::No, Validate::Yes).unwrap();
+        G2::serialize_with_mode(&g2, &mut compressed[..], Compress::Yes).unwrap();
+        convert_endianness::<64, 64>(&compressed)
+            .try_into()
+            .unwrap()
+    }
+
     #[test]
     fn proof_verification_with_compressed_inputs_should_succeed() {
+        let mut public_inputs_vec = Vec::new();
+        for input in PUBLIC_INPUTS.chunks(32) {
+            public_inputs_vec.push(input);
+        }
+        let compressed_proof_a = compress_g1_be(&PROOF[0..64].try_into().unwrap());
+        let compressed_proof_b = compress_g2_be(&PROOF[64..192].try_into().unwrap());
+        let compressed_proof_c = compress_g1_be(&PROOF[192..].try_into().unwrap());
+
+        let proof_a = decompress_g1(&compressed_proof_a).unwrap();
         let proof_a: G1 = G1::deserialize_with_mode(
-            &*[&change_endianness(&PROOF[0..64]), &[0u8][..]].concat(),
+            &*[&change_endianness(&proof_a[0..64]), &[0u8][..]].concat(),
             Compress::No,
             Validate::Yes,
         )
@@ -358,14 +393,14 @@ mod tests {
             .unwrap();
 
         let proof_a = change_endianness(&proof_a_neg[..64]).try_into().unwrap();
-        let proof_b = PROOF[64..192].try_into().unwrap();
-        let proof_c = PROOF[192..256].try_into().unwrap();
-
+        let proof_b = decompress_g2(&compressed_proof_b).unwrap();
+        let proof_c = decompress_g1(&compressed_proof_c).unwrap();
         let mut verifier =
             Groth16Verifier::new(&proof_a, &proof_b, &proof_c, &PUBLIC_INPUTS, &VERIFYING_KEY)
                 .unwrap();
         verifier.verify().unwrap();
     }
+
     #[test]
     fn wrong_proof_verification_should_not_succeed() {
         let proof_a = PROOF[0..64].try_into().unwrap();
