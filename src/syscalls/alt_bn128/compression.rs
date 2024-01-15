@@ -78,7 +78,6 @@ pub mod target_arch {
             Validate::No,
         )
         .map_err(|_| AltBn128CompressionError::G1DecompressionFailed)?;
-        println!("decompressed_g1 flags: {:?}", decompressed_g1.to_flags());
 
         let mut decompressed_g1_bytes = [0u8; alt_bn128_compression_size::G1];
         decompressed_g1
@@ -122,17 +121,17 @@ pub mod target_arch {
         if g2_bytes == [0u8; alt_bn128_compression_size::G2_COMPRESSED] {
             return Ok([0u8; alt_bn128_compression_size::G2]);
         }
-        println!("here");
+
         let decompressed_g2 =
             G2::deserialize_compressed(convert_endianness::<64, 64>(&g2_bytes).as_slice())
                 .map_err(|_| AltBn128CompressionError::G2DecompressionFailed)?;
-        println!("here");
+
         let mut decompressed_g2_bytes = [0u8; alt_bn128_compression_size::G2];
         decompressed_g2
             .x
             .serialize_with_mode(&mut decompressed_g2_bytes[..64], Compress::No)
             .map_err(|_| AltBn128CompressionError::G2DecompressionFailed)?;
-        println!("here");
+
         decompressed_g2
             .y
             .serialize_with_mode(&mut decompressed_g2_bytes[64..128], Compress::No)
@@ -268,7 +267,6 @@ mod tests {
 
     use {
         super::*,
-        // crate::convert_endianness,
         ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate},
         std::ops::Neg,
         target_arch::{
@@ -312,8 +310,6 @@ mod tests {
             let mut compressed_ref = [0u8; 32];
             G1::serialize_with_mode(point, compressed_ref.as_mut_slice(), Compress::Yes).unwrap();
             let compressed_ref: [u8; 32] = convert_endianness::<32, 32>(&compressed_ref);
-            println!("point {:?}", point.to_flags());
-            // assert_eq!(compressed_ref, expected);
 
             let decompressed = alt_bn128_g1_decompress(compressed_ref.as_slice()).unwrap();
 
@@ -325,10 +321,9 @@ mod tests {
         }
     }
 
-    #[ignore]
     #[test]
     fn alt_bn128_g1_compress_loop() {
-        for _ in 0..10_000 {
+        for _ in 0..1000 {
             let mut rng = test_rng();
             let mut g1_le = [0u8; 64];
             let rnd_g1 = G1::rand(&mut rng);
@@ -366,8 +361,6 @@ mod tests {
                 G1::serialize_with_mode(point, compressed_ref.as_mut_slice(), Compress::Yes)
                     .unwrap();
                 let compressed_ref: [u8; 32] = convert_endianness::<32, 32>(&compressed_ref);
-                // println!("point {:?}", point.to_flags());
-                // assert_eq!(compressed_ref, expected);
 
                 let decompressed = alt_bn128_g1_decompress(compressed_ref.as_slice()).unwrap();
 
@@ -426,10 +419,9 @@ mod tests {
         }
     }
 
-    #[ignore]
     #[test]
     fn alt_bn128_g2_compress_loop() {
-        for _ in 0..10_000 {
+        for _ in 0..100 {
             let mut rng = test_rng();
             let mut g2_le = [0u8; 128];
             let rnd_g2 = G2::rand(&mut rng);
