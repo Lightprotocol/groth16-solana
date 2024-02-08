@@ -137,11 +137,11 @@ mod tests {
     use super::*;
     use ark_bn254;
     use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
+    use solana_program::alt_bn128::compression::prelude::convert_endianness;
 
     use std::ops::Neg;
     type G1 = ark_bn254::g1::G1Affine;
     type G2 = ark_bn254::g2::G2Affine;
-    use crate::syscalls::alt_bn128::compression::target_arch::convert_endianness;
 
     pub const VERIFYING_KEY: Groth16Verifyingkey = Groth16Verifyingkey {
         nr_pubinputs: 10,
