@@ -1,7 +1,8 @@
-use crate::errors::Groth16Error;
-use crate::syscalls::alt_bn128::compression::target_arch::{
+use solana_program::alt_bn128::compression::prelude::{
     alt_bn128_g1_decompress, alt_bn128_g2_decompress,
 };
+
+use crate::errors::Groth16Error;
 
 pub fn decompress_g1(g1_bytes: &[u8; 32]) -> Result<[u8; 64], Groth16Error> {
     let decompressed_g1 = alt_bn128_g1_decompress(g1_bytes)
@@ -43,7 +44,7 @@ mod tests {
     ];
     #[test]
     fn apply_bitmask() {
-        use crate::syscalls::alt_bn128::compression::target_arch::convert_endianness;
+        use solana_program::alt_bn128::compression::prelude::convert_endianness;
 
         let proof_a_le: G1 = G1::deserialize_with_mode(
             &convert_endianness::<32, 64>(&PROOF[0..64].try_into().unwrap())[..],

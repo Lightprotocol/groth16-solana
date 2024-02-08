@@ -6,13 +6,15 @@ description = "groth16 verification with solana alt_bn128 syscalls"
 license = "MIT"
 
 [dependencies]
-solana-program = "1.16.15"
+solana-program = "1.17.14"
 thiserror = "1.0"
 ark-serialize = "0.4.2"
 ark-ec = "0.4.2"
 ark-ff = "0.4.2"
 ark-bn254 = "0.4.0"
 
+# TODO: Remove once https://github.com/solana-labs/solana/issues/33504 is resolved.
+ahash = "=0.8.6"
 
 [dev-dependencies]
 ark-std = "0.4.0"
