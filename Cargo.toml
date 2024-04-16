@@ -6,7 +6,7 @@ description = "groth16 verification with solana alt_bn128 syscalls"
 license = "MIT"
 
 [dependencies]
-solana-program = "1.16.15"
+solana-program = "1.17.14"
 thiserror = "1.0"
 ark-serialize = "0.4.2"
 ark-ec = "0.4.2"
