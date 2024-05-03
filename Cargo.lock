@@ -604,7 +604,7 @@ dependencies = [
 
 [[package]]
 name = "groth16-solana"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "ark-bn254",
  "ark-ec",

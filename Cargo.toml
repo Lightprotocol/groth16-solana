@@ -1,6 +1,6 @@
 [package]
 name = "groth16-solana"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2021"
 description = "groth16 verification with solana alt_bn128 syscalls"
 license = "MIT"
