@@ -3,6 +3,7 @@ name = "groth16-solana"
 version = "0.0.3"
 edition = "2021"
 description = "groth16 verification with solana alt_bn128 syscalls"
+repository = "https://github.com/Lightprotocol/groth16-solana"
 license = "MIT"
 
 [dependencies]
