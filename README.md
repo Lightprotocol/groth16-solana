@@ -4,7 +4,7 @@ Groth16 zero-knowledge proof verification with Solana altbn254 syscalls.
 
 Verification takes less than 200,000 compute units.
 
-The syscalls are contained in Solana releases 1.15.0 onwards and yet to be activated on a public network.
+The syscalls are contained in Solana releases 1.18.x onwards and are active on Solana Mainnet-beta.
 
 Inputs need to be in u8 arrays in big endian.
 
