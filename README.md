@@ -51,6 +51,11 @@ In this repo:
 - npm i
 - npm run parse-vk <inputFile>
 
+## Audit
+Groth16_solana has been audited during the Light Protocol v3 audit. Check out the report [here](https://file.notion.so/f/f/3e18f32c-2f42-4786-8870-c571eb0af77e/ebf1b371-2456-4127-b419-1a9812108368/Light_Protocol_V3_Audit_Report.pdf?id=2169256e-e998-4d50-a922-4602a20fe65b&table=block&spaceId=3e18f32c-2f42-4786-8870-c571eb0af77e&expirationTimestamp=1722110400000&signature=Q4NG6VMKx8UqG-xze7eKwdYGINTlIoC7-TI49wGJGSU&downloadName=Light+Protocol+V3+Audit+Report.pdf). 
+
+Note: This open-source crate is provided "as-is" without warranties. Use at your own risk.
+
 ## License
 
 Licensed under [Apache License, Version 2.0](LICENSE).
