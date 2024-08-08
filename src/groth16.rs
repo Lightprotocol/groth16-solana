@@ -25,11 +25,12 @@
 //!
 //! See functional test for a running example how to use this library.
 //!
+use crate::errors::Groth16Error;
+use ark_ff::PrimeField;
+use num_bigint::BigUint;
 use solana_program::alt_bn128::prelude::{
     alt_bn128_addition, alt_bn128_multiplication, alt_bn128_pairing,
 };
-
-use crate::errors::Groth16Error;
 
 #[derive(PartialEq, Eq, Debug)]
 pub struct Groth16Verifyingkey<'a> {
@@ -85,10 +86,13 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
         })
     }
 
-    pub fn prepare_inputs(&mut self) -> Result<(), Groth16Error> {
+    pub fn prepare_inputs<const CHECK: bool>(&mut self) -> Result<(), Groth16Error> {
         let mut prepared_public_inputs = self.verifyingkey.vk_ic[0];
 
         for (i, input) in self.public_inputs.iter().enumerate() {
+            if CHECK && !is_smaller_than_bn254_field_size_be(input) {
+                return Err(Groth16Error::PublicInputGreaterThenFieldSize);
+            }
             let mul_res = alt_bn128_multiplication(
                 &[&self.verifyingkey.vk_ic[i + 1][..], &input[..]].concat(),
             )
@@ -105,8 +109,16 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
         Ok(())
     }
 
+    /// Verifies the proof, and checks that public inputs are smaller than
+    /// field size.
     pub fn verify(&mut self) -> Result<bool, Groth16Error> {
-        self.prepare_inputs()?;
+        self.verify_unchecked::<true>()
+    }
+
+    /// Verifies the proof, and does not check that public inputs are smaller
+    /// than field size.
+    pub fn verify_unchecked<const CHECK: bool>(&mut self) -> Result<bool, Groth16Error> {
+        self.prepare_inputs::<CHECK>()?;
 
         let pairing_input = [
             self.proof_a.as_slice(),
@@ -130,14 +142,19 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
     }
 }
 
+pub fn is_smaller_than_bn254_field_size_be(bytes: &[u8; 32]) -> bool {
+    let bigint = BigUint::from_bytes_be(bytes);
+    bigint < ark_bn254::Fr::MODULUS.into()
+}
+
 #[cfg(test)]
 mod tests {
     use crate::decompression::{decompress_g1, decompress_g2};
 
     use super::*;
     use ark_bn254;
+    use ark_ff::BigInteger;
     use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
-
     use std::ops::Neg;
     type G1 = ark_bn254::g1::G1Affine;
     type G2 = ark_bn254::g2::G2Affine;
@@ -311,6 +328,19 @@ mod tests {
         139, 253, 65, 152, 92, 209, 53, 37, 25, 83, 61, 252, 42, 181, 243, 16, 21, 2, 199, 123, 96,
         218, 151, 253, 86, 69, 181, 202, 109, 64, 129, 124, 254, 192, 25, 177, 199, 26, 50,
     ];
+
+    #[test]
+    fn test_is_smaller_than_bn254_field_size_be() {
+        let bytes = [0u8; 32];
+        assert!(is_smaller_than_bn254_field_size_be(&bytes));
+
+        let bytes: [u8; 32] = BigUint::from(ark_bn254::Fr::MODULUS)
+            .to_bytes_be()
+            .try_into()
+            .unwrap();
+        assert!(!is_smaller_than_bn254_field_size_be(&bytes));
+    }
+
     #[test]
     fn proof_verification_should_succeed() {
         let proof_a: G1 = G1::deserialize_with_mode(
@@ -339,6 +369,7 @@ mod tests {
             Groth16Verifier::new(&proof_a, &proof_b, &proof_c, &PUBLIC_INPUTS, &VERIFYING_KEY)
                 .unwrap();
         verifier.verify().unwrap();
+        verifier.verify_unchecked::<false>().unwrap();
     }
 
     fn compress_g1_be(g1: &[u8; 64]) -> [u8; 32] {
@@ -399,6 +430,7 @@ mod tests {
             Groth16Verifier::new(&proof_a, &proof_b, &proof_c, &PUBLIC_INPUTS, &VERIFYING_KEY)
                 .unwrap();
         verifier.verify().unwrap();
+        verifier.verify_unchecked::<false>().unwrap();
     }
 
     #[test]
@@ -417,6 +449,35 @@ mod tests {
         assert_eq!(
             verifier.verify(),
             Err(Groth16Error::ProofVerificationFailed)
+        );
+        assert_eq!(
+            verifier.verify_unchecked::<false>(),
+            Err(Groth16Error::ProofVerificationFailed)
+        );
+    }
+
+    #[test]
+    fn public_input_greater_than_field_size_should_not_suceed() {
+        let proof_a = PROOF[0..64].try_into().unwrap();
+        let proof_b = PROOF[64..192].try_into().unwrap();
+        let proof_c = PROOF[192..256].try_into().unwrap();
+        let mut public_inputs = PUBLIC_INPUTS;
+        public_inputs[0] = ark_bn254::Fr::MODULUS.to_bytes_be().try_into().unwrap();
+        let mut verifier = Groth16Verifier::new(
+            &proof_a, // using non negated proof a as test for wrong proof
+            &proof_b,
+            &proof_c,
+            &public_inputs,
+            &VERIFYING_KEY,
+        )
+        .unwrap();
+        assert_eq!(
+            verifier.verify_unchecked::<false>(),
+            Err(Groth16Error::ProofVerificationFailed)
+        );
+        assert_eq!(
+            verifier.verify(),
+            Err(Groth16Error::PublicInputGreaterThenFieldSize)
         );
     }
 }
