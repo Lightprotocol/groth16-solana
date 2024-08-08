@@ -13,6 +13,7 @@ ark-serialize = "0.4.2"
 ark-ec = "0.4.2"
 ark-ff = "0.4.2"
 ark-bn254 = "0.4.0"
+num-bigint = "0.4.6"
 
 
 [dev-dependencies]

@@ -20,4 +20,6 @@ pub enum Groth16Error {
     DecompressingG1Failed,
     #[error("DecompressingG2Failed")]
     DecompressingG2Failed,
+    #[error("PublicInputGreaterThenFieldSize")]
+    PublicInputGreaterThenFieldSize,
 }
