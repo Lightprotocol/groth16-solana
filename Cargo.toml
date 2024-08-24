@@ -7,7 +7,7 @@ repository = "https://github.com/Lightprotocol/groth16-solana"
 license = "MIT"
 
 [dependencies]
-solana-program = "1.17.14"
+solana-program = "2.0.6"
 thiserror = "1.0"
 ark-serialize = "0.4.2"
 ark-ec = "0.4.2"
