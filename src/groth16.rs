@@ -90,7 +90,7 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
         let mut prepared_public_inputs = self.verifyingkey.vk_ic[0];
 
         for (i, input) in self.public_inputs.iter().enumerate() {
-            if CHECK && !is_smaller_than_bn254_field_size_be(input) {
+            if CHECK && !is_less_than_bn254_field_size_be(input) {
                 return Err(Groth16Error::PublicInputGreaterThenFieldSize);
             }
             let mul_res = alt_bn128_multiplication(
@@ -112,12 +112,16 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
     /// Verifies the proof, and checks that public inputs are smaller than
     /// field size.
     pub fn verify(&mut self) -> Result<bool, Groth16Error> {
-        self.verify_unchecked::<true>()
+        self.verify_common::<true>()
     }
 
     /// Verifies the proof, and does not check that public inputs are smaller
     /// than field size.
-    pub fn verify_unchecked<const CHECK: bool>(&mut self) -> Result<bool, Groth16Error> {
+    pub fn verify_unchecked(&mut self) -> Result<bool, Groth16Error> {
+        self.verify_common::<false>()
+    }
+
+    fn verify_common<const CHECK: bool>(&mut self) -> Result<bool, Groth16Error> {
         self.prepare_inputs::<CHECK>()?;
 
         let pairing_input = [
@@ -142,7 +146,7 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
     }
 }
 
-pub fn is_smaller_than_bn254_field_size_be(bytes: &[u8; 32]) -> bool {
+pub fn is_less_than_bn254_field_size_be(bytes: &[u8; 32]) -> bool {
     let bigint = BigUint::from_bytes_be(bytes);
     bigint < ark_bn254::Fr::MODULUS.into()
 }
@@ -330,15 +334,15 @@ mod tests {
     ];
 
     #[test]
-    fn test_is_smaller_than_bn254_field_size_be() {
+    fn test_is_less_than_bn254_field_size_be() {
         let bytes = [0u8; 32];
-        assert!(is_smaller_than_bn254_field_size_be(&bytes));
+        assert!(is_less_than_bn254_field_size_be(&bytes));
 
         let bytes: [u8; 32] = BigUint::from(ark_bn254::Fr::MODULUS)
             .to_bytes_be()
             .try_into()
             .unwrap();
-        assert!(!is_smaller_than_bn254_field_size_be(&bytes));
+        assert!(!is_less_than_bn254_field_size_be(&bytes));
     }
 
     #[test]
@@ -369,7 +373,7 @@ mod tests {
             Groth16Verifier::new(&proof_a, &proof_b, &proof_c, &PUBLIC_INPUTS, &VERIFYING_KEY)
                 .unwrap();
         verifier.verify().unwrap();
-        verifier.verify_unchecked::<false>().unwrap();
+        verifier.verify_unchecked().unwrap();
     }
 
     fn compress_g1_be(g1: &[u8; 64]) -> [u8; 32] {
@@ -430,7 +434,7 @@ mod tests {
             Groth16Verifier::new(&proof_a, &proof_b, &proof_c, &PUBLIC_INPUTS, &VERIFYING_KEY)
                 .unwrap();
         verifier.verify().unwrap();
-        verifier.verify_unchecked::<false>().unwrap();
+        verifier.verify_unchecked().unwrap();
     }
 
     #[test]
@@ -451,7 +455,7 @@ mod tests {
             Err(Groth16Error::ProofVerificationFailed)
         );
         assert_eq!(
-            verifier.verify_unchecked::<false>(),
+            verifier.verify_unchecked(),
             Err(Groth16Error::ProofVerificationFailed)
         );
     }
@@ -472,7 +476,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            verifier.verify_unchecked::<false>(),
+            verifier.verify_unchecked(),
             Err(Groth16Error::ProofVerificationFailed)
         );
         assert_eq!(
