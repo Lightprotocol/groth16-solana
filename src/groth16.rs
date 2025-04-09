@@ -381,8 +381,6 @@ mod tests {
         G1::serialize_with_mode(&g1, &mut compressed[..], Compress::Yes).unwrap();
 
         convert_endianness::<32, 32>(&compressed)
-            .try_into()
-            .unwrap()
     }
 
     fn compress_g2_be(g2: &[u8; 128]) -> [u8; 64] {
@@ -392,8 +390,6 @@ mod tests {
         let g2 = G2::deserialize_with_mode(g2.as_slice(), Compress::No, Validate::Yes).unwrap();
         G2::serialize_with_mode(&g2, &mut compressed[..], Compress::Yes).unwrap();
         convert_endianness::<64, 64>(&compressed)
-            .try_into()
-            .unwrap()
     }
 
     #[test]

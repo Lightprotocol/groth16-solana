@@ -42,6 +42,7 @@ mod tests {
     ];
     #[test]
     fn apply_bitmask() {
+        use solana_bn254::compression::prelude::convert_endianness;
 
         let proof_a_le: G1 = G1::deserialize_with_mode(
             &convert_endianness::<32, 64>(&PROOF[0..64].try_into().unwrap())[..],
@@ -110,11 +111,9 @@ mod tests {
         let mut serialized_compressed = [0u8; 32];
         G1::serialize_compressed(&proof_c_uncompressed, serialized_compressed.as_mut()).unwrap();
         assert_eq!(serialized_compressed.to_vec(), new_proof_c_bytes[..32]);
-        let proof_c = decompress_g1(
-            &convert_endianness::<32, 32>(&new_proof_c_bytes[0..32].try_into().unwrap())
-                .try_into()
-                .unwrap(),
-        )
+        let proof_c = decompress_g1(&convert_endianness::<32, 32>(
+            &new_proof_c_bytes[0..32].try_into().unwrap(),
+        ))
         .unwrap();
         assert_eq!(proof_c.to_vec(), PROOF[192..].to_vec());
     }
