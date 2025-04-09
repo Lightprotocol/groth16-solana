@@ -89,7 +89,7 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
 
         for (i, input) in self.public_inputs.iter().enumerate() {
             if CHECK && !is_less_than_bn254_field_size_be(input) {
-                return Err(Groth16Error::PublicInputGreaterThenFieldSize);
+                return Err(Groth16Error::PublicInputGreaterThanFieldSize);
             }
             let mul_res = alt_bn128_multiplication(
                 &[&self.verifyingkey.vk_ic[i + 1][..], &input[..]].concat(),
@@ -475,7 +475,7 @@ mod tests {
         );
         assert_eq!(
             verifier.verify(),
-            Err(Groth16Error::PublicInputGreaterThenFieldSize)
+            Err(Groth16Error::PublicInputGreaterThanFieldSize)
         );
     }
 }

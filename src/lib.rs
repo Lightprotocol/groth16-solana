@@ -4,7 +4,7 @@
 //!
 //! Verification takes less than 200,000 compute units.
 //!
-//! The syscalls are contained in Solana releases 1.15.0 onwards and yet to be activated on a public network.
+//! The syscalls are contained in Solana releases 1.18.x onwards and are active on mainnet-beta.
 //!
 //! Inputs need to be in u8 arrays in big endian.
 //!
