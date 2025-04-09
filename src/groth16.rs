@@ -28,9 +28,7 @@
 use crate::errors::Groth16Error;
 use ark_ff::PrimeField;
 use num_bigint::BigUint;
-use solana_program::alt_bn128::prelude::{
-    alt_bn128_addition, alt_bn128_multiplication, alt_bn128_pairing,
-};
+use solana_bn254::prelude::{alt_bn128_addition, alt_bn128_multiplication, alt_bn128_pairing};
 
 #[derive(PartialEq, Eq, Debug)]
 pub struct Groth16Verifyingkey<'a> {
@@ -162,7 +160,7 @@ mod tests {
     use std::ops::Neg;
     type G1 = ark_bn254::g1::G1Affine;
     type G2 = ark_bn254::g2::G2Affine;
-    use solana_program::alt_bn128::compression::prelude::convert_endianness;
+    use solana_bn254::compression::prelude::convert_endianness;
 
     pub const VERIFYING_KEY: Groth16Verifyingkey = Groth16Verifyingkey {
         nr_pubinputs: 10,
