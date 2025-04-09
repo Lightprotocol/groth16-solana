@@ -7,18 +7,17 @@ repository = "https://github.com/Lightprotocol/groth16-solana"
 license = "MIT"
 
 [dependencies]
-solana-program = "2.1.18"
 solana-bn254 = "2.2.2"
 thiserror = "1.0"
-ark-serialize = "0.4.2"
-ark-ec = "0.4.2"
-ark-ff = "0.4.2"
-ark-bn254 = "0.4.0"
+ark-serialize = "0.5"
+ark-ec = "0.5"
+ark-ff = "0.5"
+ark-bn254 = "0.5"
 num-bigint = "0.4.6"
 
 
 [dev-dependencies]
-ark-std = "0.4.0"
+ark-std = "0.5"
 array-bytes = "6.2.2"
 serde = "1.0.195"
 serde_json = "1.0.111"
