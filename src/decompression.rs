@@ -19,9 +19,9 @@ mod tests {
     use super::*;
     use ark_bn254;
     use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
+    use solana_bn254::compression::prelude::convert_endianness;
 
     use ark_serialize::Flags;
-    use solana_bn254::compression::prelude::convert_endianness;
     type G1 = ark_bn254::g1::G1Affine;
     type G2 = ark_bn254::g2::G2Affine;
 
@@ -42,8 +42,6 @@ mod tests {
     ];
     #[test]
     fn apply_bitmask() {
-        use solana_bn254::compression::prelude::convert_endianness;
-
         let proof_a_le: G1 = G1::deserialize_with_mode(
             &convert_endianness::<32, 64>(&PROOF[0..64].try_into().unwrap())[..],
             Compress::No,
