@@ -16,7 +16,7 @@ The verifier file can be generated with the JavaScript script from a verifyingke
 
 ## Usage:
 
-```
+```rust
 let mut public_inputs_vec = Vec::new();
 for input in PUBLIC_INPUTS.chunks(32) {
     public_inputs_vec.push(input);
