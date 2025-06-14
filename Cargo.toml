@@ -1,6 +1,6 @@
 [package]
 name = "groth16-solana"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "groth16 verification with solana alt_bn128 syscalls"
 repository = "https://github.com/Lightprotocol/groth16-solana"
