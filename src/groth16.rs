@@ -109,17 +109,17 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
 
     /// Verifies the proof, and checks that public inputs are smaller than
     /// field size.
-    pub fn verify(&mut self) -> Result<bool, Groth16Error> {
+    pub fn verify(&mut self) -> Result<(), Groth16Error> {
         self.verify_common::<true>()
     }
 
     /// Verifies the proof, and does not check that public inputs are smaller
     /// than field size.
-    pub fn verify_unchecked(&mut self) -> Result<bool, Groth16Error> {
+    pub fn verify_unchecked(&mut self) -> Result<(), Groth16Error> {
         self.verify_common::<false>()
     }
 
-    fn verify_common<const CHECK: bool>(&mut self) -> Result<bool, Groth16Error> {
+    fn verify_common<const CHECK: bool>(&mut self) -> Result<(), Groth16Error> {
         self.prepare_inputs::<CHECK>()?;
 
         let pairing_input = [
@@ -140,7 +140,7 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
         if pairing_res[31] != 1 {
             return Err(Groth16Error::ProofVerificationFailed);
         }
-        Ok(true)
+        Ok(())
     }
 }
 
