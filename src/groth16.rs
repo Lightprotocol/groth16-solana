@@ -35,7 +35,7 @@ pub struct Groth16Verifyingkey<'a> {
     pub nr_pubinputs: usize,
     pub vk_alpha_g1: [u8; 64],
     pub vk_beta_g2: [u8; 128],
-    pub vk_gamme_g2: [u8; 128],
+    pub vk_gamma_g2: [u8; 128],
     pub vk_delta_g2: [u8; 128],
     pub vk_ic: &'a [[u8; 64]],
 }
@@ -126,7 +126,7 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
             self.proof_a.as_slice(),
             self.proof_b.as_slice(),
             self.prepared_public_inputs.as_slice(),
-            self.verifyingkey.vk_gamme_g2.as_slice(),
+            self.verifyingkey.vk_gamma_g2.as_slice(),
             self.proof_c.as_slice(),
             self.verifyingkey.vk_delta_g2.as_slice(),
             self.verifyingkey.vk_alpha_g1.as_slice(),
@@ -182,7 +182,7 @@ mod tests {
             248, 150, 183, 198, 62, 234, 5, 169, 213, 127, 6, 84, 122, 208, 206, 200,
         ],
 
-        vk_gamme_g2: [
+        vk_gamma_g2: [
             25, 142, 147, 147, 146, 13, 72, 58, 114, 96, 191, 183, 49, 251, 93, 37, 241, 170, 73,
             51, 53, 169, 231, 18, 151, 228, 133, 183, 174, 243, 18, 194, 24, 0, 222, 239, 18, 31,
             30, 118, 66, 106, 0, 102, 94, 92, 68, 121, 103, 67, 34, 212, 247, 94, 218, 221, 70,
