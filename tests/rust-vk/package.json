@@ -5,11 +5,11 @@
   "scripts": {
     "setup": "./scripts/setup.sh",
     "clean": "rm -rf build/* node_modules",
-    "compile": "circom circuits/compressed_account_merkle_proof.circom --r1cs --wasm --sym -o build",
+    "compile": "mkdir -p build && circom circuits/compressed_account_merkle_proof.circom --r1cs --wasm --sym -o build",
     "setup-circuit": "snarkjs groth16 setup build/compressed_account_merkle_proof.r1cs pot/powersOfTau28_hez_final_16.ptau build/compressed_account_merkle_proof_0000.zkey",
     "contribute": "snarkjs zkey contribute build/compressed_account_merkle_proof_0000.zkey build/compressed_account_merkle_proof_final.zkey --name='Test contribution' -e='random entropy'",
     "export-vkey": "snarkjs zkey export verificationkey build/compressed_account_merkle_proof_final.zkey build/verification_key.json",
-    "build-all": "npm run compile && npm run setup-circuit && npm run contribute && npm run export-vkey"
+    "build-all": "npm run setup && npm run compile && npm run setup-circuit && npm run contribute && npm run export-vkey"
   },
   "dependencies": {
     "circomlib": "2.0.5"

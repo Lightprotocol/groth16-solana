@@ -98,6 +98,60 @@ pub mod circom_prover {
         Ok((proof_a, proof_b, proof_c))
     }
 
+    /// Convert uncompressed proof to compressed format
+    ///
+    /// Compresses proof_a (64 bytes -> 32 bytes) and proof_c (64 bytes -> 32 bytes)
+    /// using arkworks compressed serialization with the sign bit in the most significant byte.
+    /// proof_b remains 128 bytes (already compressed in the standard format).
+    ///
+    /// # Arguments
+    ///
+    /// * `proof_a` - Uncompressed proof_a (64 bytes, big-endian)
+    /// * `proof_b` - Proof_b (128 bytes, big-endian)
+    /// * `proof_c` - Uncompressed proof_c (64 bytes, big-endian)
+    ///
+    /// # Returns
+    ///
+    /// A tuple of (compressed_proof_a, proof_b, compressed_proof_c) where:
+    /// - compressed_proof_a: 32 bytes
+    /// - proof_b: 128 bytes (unchanged)
+    /// - compressed_proof_c: 32 bytes
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if deserialization or compression fails
+    pub fn convert_proof_to_compressed(
+        proof_a: &[u8; 64],
+        proof_b: &[u8; 128],
+        proof_c: &[u8; 64],
+    ) -> Result<([u8; 32], [u8; 128], [u8; 32]), Groth16Error> {
+        use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
+        use solana_bn254::compression::prelude::convert_endianness;
+        type G1 = ark_bn254::g1::G1Affine;
+
+        // Convert proof_a from BE to LE, deserialize, and compress
+        let proof_a_le = convert_endianness::<32, 64>(proof_a);
+        let proof_a_point = G1::deserialize_with_mode(&proof_a_le[..], Compress::No, Validate::Yes)?;
+
+        let mut compressed_a_le = [0u8; 32];
+        proof_a_point.serialize_with_mode(&mut compressed_a_le[..], Compress::Yes)?;
+
+        // Convert back to BE
+        let compressed_a: [u8; 32] = convert_endianness::<32, 32>(&compressed_a_le);
+
+        // Convert proof_c from BE to LE, deserialize, and compress
+        let proof_c_le = convert_endianness::<32, 64>(proof_c);
+        let proof_c_point = G1::deserialize_with_mode(&proof_c_le[..], Compress::No, Validate::Yes)?;
+
+        let mut compressed_c_le = [0u8; 32];
+        proof_c_point.serialize_with_mode(&mut compressed_c_le[..], Compress::Yes)?;
+
+        // Convert back to BE
+        let compressed_c: [u8; 32] = convert_endianness::<32, 32>(&compressed_c_le);
+
+        Ok((compressed_a, *proof_b, compressed_c))
+    }
+
     /// Convert circom-prover public inputs to groth16-solana format
     ///
     /// Circom-prover gives us BigUint in BE format.
