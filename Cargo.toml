@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "tests/rust-vk"]
+resolver = "2"
+
 [package]
 name = "groth16-solana"
 version = "0.2.0"

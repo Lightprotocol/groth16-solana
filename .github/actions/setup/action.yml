@@ -1,0 +1,58 @@
+name: Setup Environment
+description: Setup Rust, Node.js, Circom and SnarkJS for testing
+
+inputs:
+  rust-toolchain:
+    description: "Rust toolchain version"
+    required: false
+    default: "1.90.0"
+  node-version:
+    description: "Node.js version"
+    required: false
+    default: "22"
+  circom-version:
+    description: "Circom version"
+    required: false
+    default: "v2.2.2"
+
+runs:
+  using: composite
+  steps:
+    - name: Install Rust toolchain
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        toolchain: ${{ inputs.rust-toolchain }}
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Cache circom installation
+      id: cache-circom
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/bin/circom
+        key: circom-${{ runner.os }}-${{ inputs.circom-version }}
+
+    - name: Install circom
+      if: steps.cache-circom.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        wget -q https://github.com/iden3/circom/releases/download/${{ inputs.circom-version }}/circom-linux-amd64
+        chmod +x circom-linux-amd64
+        mv circom-linux-amd64 ~/.cargo/bin/circom
+
+    - name: Install snarkjs
+      shell: bash
+      run: npm install -g snarkjs
+
+    - name: Display versions
+      shell: bash
+      run: |
+        rustc --version
+        cargo --version
+        node --version
+        npm --version
+        circom --version
+        snarkjs --help | head -1 || true

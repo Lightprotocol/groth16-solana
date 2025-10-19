@@ -1,4 +1,4 @@
-#!cfg(test)]
+#![allow(unused)]
 use circom_prover::{prover::ProofLib, witness::WitnessFn, CircomProver};
 use groth16_solana::groth16::Groth16Verifier;
 use groth16_solana::proof_parser::circom_prover::{convert_proof, convert_public_inputs};

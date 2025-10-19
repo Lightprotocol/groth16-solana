@@ -1,0 +1,47 @@
+name: Rust
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUST_TOOLCHAIN: "1.90.0"
+  NODE_VERSION: "22"
+  CIRCOM_VERSION: "v2.2.2"
+
+jobs:
+  test-rust:
+    name: Test Workspace
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+        with:
+          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
+          node-version: ${{ env.NODE_VERSION }}
+          circom-version: ${{ env.CIRCOM_VERSION }}
+
+      - name: Install npm dependencies (for circuit compilation)
+        working-directory: tests/rust-vk
+        run: npm install
+
+      - name: Compile circuit and generate keys
+        working-directory: tests/rust-vk
+        run: npm run build-all
+
+      - name: Build workspace
+        run: cargo build --workspace
+
+      - name: Test workspace
+        run: cargo test --workspace
