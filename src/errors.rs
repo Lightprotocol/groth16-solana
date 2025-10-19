@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-#[derive(Debug, Error, Clone, PartialEq, Eq)]
+#[derive(Debug, Error, PartialEq)]
 pub enum Groth16Error {
     #[error("Incompatible Verifying Key with number of public inputs")]
     IncompatibleVerifyingKeyWithNrPublicInputs,
@@ -22,4 +22,17 @@ pub enum Groth16Error {
     DecompressingG2Failed,
     #[error("PublicInputGreaterThanFieldSize")]
     PublicInputGreaterThanFieldSize,
+    #[cfg(feature = "circom")]
+    #[error("Arkworks serialization error: {0}")]
+    ArkworksSerializationError(String),
+    #[cfg(feature = "circom")]
+    #[error("Failed to convert proof component to byte array")]
+    ProofConversionError,
+}
+
+#[cfg(feature = "circom")]
+impl From<ark_serialize::SerializationError> for Groth16Error {
+    fn from(e: ark_serialize::SerializationError) -> Self {
+        Groth16Error::ArkworksSerializationError(e.to_string())
+    }
 }

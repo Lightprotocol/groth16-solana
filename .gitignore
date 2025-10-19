@@ -1,2 +1,5 @@
 target
 node_modules
+pot
+build
+.DS_Store

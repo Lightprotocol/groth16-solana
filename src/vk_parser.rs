@@ -57,7 +57,8 @@ struct RawVerifyingKey {
 
 /// Convert a bigint string to little-endian bytes, then reverse to big-endian
 fn bigint_string_to_be_bytes(s: &str, size: usize) -> Result<Vec<u8>, VkParseError> {
-    let bigint = s.parse::<BigUint>()
+    let bigint = s
+        .parse::<BigUint>()
         .map_err(|e| VkParseError::InvalidData(format!("Failed to parse bigint '{}': {}", s, e)))?;
 
     let le_bytes = bigint.to_bytes_le();
@@ -79,16 +80,19 @@ fn process_g1_component(component: &str) -> Result<Vec<u8>, VkParseError> {
 /// Process G2 point: concatenate two 32-byte LE components, reverse the full 64 bytes, then split
 fn process_g2_component(components: &[String]) -> Result<(Vec<u8>, Vec<u8>), VkParseError> {
     if components.len() != 2 {
-        return Err(VkParseError::InvalidData(
-            format!("G2 component must have exactly 2 elements, got {}", components.len())
-        ));
+        return Err(VkParseError::InvalidData(format!(
+            "G2 component must have exactly 2 elements, got {}",
+            components.len()
+        )));
     }
 
     // Convert to LE bytes
-    let c0_le = components[0].parse::<BigUint>()
+    let c0_le = components[0]
+        .parse::<BigUint>()
         .map_err(|e| VkParseError::InvalidData(format!("Failed to parse bigint: {}", e)))?
         .to_bytes_le();
-    let c1_le = components[1].parse::<BigUint>()
+    let c1_le = components[1]
+        .parse::<BigUint>()
         .map_err(|e| VkParseError::InvalidData(format!("Failed to parse bigint: {}", e)))?
         .to_bytes_le();
 
@@ -111,14 +115,6 @@ fn process_g2_component(components: &[String]) -> Result<(Vec<u8>, Vec<u8>), VkP
     Ok((part0, part1))
 }
 
-/// Format a byte array as a Rust array literal
-fn format_byte_array(bytes: &[u8]) -> String {
-    let formatted: Vec<String> = bytes.iter()
-        .map(|b| b.to_string())
-        .collect();
-    format!("[{}]", formatted.join(", "))
-}
-
 /// Parse verification key JSON and generate Rust source code as a String
 ///
 /// # Arguments
@@ -137,53 +133,93 @@ pub fn parse_vk_json_to_rust_string(json_content: &str) -> Result<String, VkPars
     output.push_str("use groth16_solana::groth16::Groth16Verifyingkey;\n\n");
     output.push_str(&format!(
         "pub const VERIFYINGKEY: Groth16Verifyingkey = Groth16Verifyingkey {{\n\tnr_pubinputs: {},\n\n",
-        raw_vk.ic.len()
+        raw_vk.ic.len() - 1
     ));
 
-    // Process vk_alpha_g1
-    output.push_str("\tvk_alpha_g1: [\n");
+    // Process vk_alpha_g1 - flat [u8; 64]
+    output.push_str("\tvk_alpha_g1: [");
+    let mut alpha_bytes = Vec::new();
     for i in 0..raw_vk.vk_alpha_1.len() - 1 {
         let bytes = process_g1_component(&raw_vk.vk_alpha_1[i])?;
-        output.push_str(&format!("\t\t{},\n", format_byte_array(&bytes)));
+        alpha_bytes.extend_from_slice(&bytes);
     }
-    output.push_str("\t],\n\n");
+    output.push_str(
+        &alpha_bytes
+            .iter()
+            .map(|b| format!("{}u8", b))
+            .collect::<Vec<_>>()
+            .join(", "),
+    );
+    output.push_str("],\n\n");
 
-    // Process vk_beta_g2
-    output.push_str("\tvk_beta_g2: [\n");
+    // Process vk_beta_g2 - flat [u8; 128]
+    output.push_str("\tvk_beta_g2: [");
+    let mut beta_bytes = Vec::new();
     for i in 0..raw_vk.vk_beta_2.len() - 1 {
         let (part0, part1) = process_g2_component(&raw_vk.vk_beta_2[i])?;
-        output.push_str(&format!("\t\t{},\n", format_byte_array(&part0)));
-        output.push_str(&format!("\t\t{},\n", format_byte_array(&part1)));
+        beta_bytes.extend_from_slice(&part0);
+        beta_bytes.extend_from_slice(&part1);
     }
-    output.push_str("\t],\n\n");
+    output.push_str(
+        &beta_bytes
+            .iter()
+            .map(|b| format!("{}u8", b))
+            .collect::<Vec<_>>()
+            .join(", "),
+    );
+    output.push_str("],\n\n");
 
-    // Process vk_gamma_g2
-    output.push_str("\tvk_gamma_g2: [\n");
+    // Process vk_gamma_g2 - flat [u8; 128]
+    output.push_str("\tvk_gamma_g2: [");
+    let mut gamma_bytes = Vec::new();
     for i in 0..raw_vk.vk_gamma_2.len() - 1 {
         let (part0, part1) = process_g2_component(&raw_vk.vk_gamma_2[i])?;
-        output.push_str(&format!("\t\t{},\n", format_byte_array(&part0)));
-        output.push_str(&format!("\t\t{},\n", format_byte_array(&part1)));
+        gamma_bytes.extend_from_slice(&part0);
+        gamma_bytes.extend_from_slice(&part1);
     }
-    output.push_str("\t],\n\n");
+    output.push_str(
+        &gamma_bytes
+            .iter()
+            .map(|b| format!("{}u8", b))
+            .collect::<Vec<_>>()
+            .join(", "),
+    );
+    output.push_str("],\n\n");
 
-    // Process vk_delta_g2
-    output.push_str("\tvk_delta_g2: [\n");
+    // Process vk_delta_g2 - flat [u8; 128]
+    output.push_str("\tvk_delta_g2: [");
+    let mut delta_bytes = Vec::new();
     for i in 0..raw_vk.vk_delta_2.len() - 1 {
         let (part0, part1) = process_g2_component(&raw_vk.vk_delta_2[i])?;
-        output.push_str(&format!("\t\t{},\n", format_byte_array(&part0)));
-        output.push_str(&format!("\t\t{},\n", format_byte_array(&part1)));
+        delta_bytes.extend_from_slice(&part0);
+        delta_bytes.extend_from_slice(&part1);
     }
-    output.push_str("\t],\n\n");
+    output.push_str(
+        &delta_bytes
+            .iter()
+            .map(|b| format!("{}u8", b))
+            .collect::<Vec<_>>()
+            .join(", "),
+    );
+    output.push_str("],\n\n");
 
-    // Process vk_ic
+    // Process vk_ic - &[[u8; 64]]
     output.push_str("\tvk_ic: &[\n");
     for point in &raw_vk.ic {
-        output.push_str("\t\t[\n");
+        output.push_str("\t\t[");
+        let mut point_bytes = Vec::new();
         for i in 0..point.len() - 1 {
             let bytes = process_g1_component(&point[i])?;
-            output.push_str(&format!("\t\t\t{},\n", format_byte_array(&bytes)));
+            point_bytes.extend_from_slice(&bytes);
         }
-        output.push_str("\t\t],\n");
+        output.push_str(
+            &point_bytes
+                .iter()
+                .map(|b| format!("{}u8", b))
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+        output.push_str("],\n");
     }
     output.push_str("\t]\n");
 

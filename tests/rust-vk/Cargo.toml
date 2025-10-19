@@ -1,0 +1,19 @@
+[package]
+name = "rust-vk-integration-test"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+groth16-solana = { path = "../..", features = ["circom"] }
+circom-prover = "0.1"
+rust-witness = "0.1"
+num-bigint = "0.4"
+serde_json = "1.0"
+light-compressed-account = { version = "0.5.0", features = ["new-unique"] }
+light-hasher = { version = "4.0.0", features = ["solana"] }
+light-merkle-tree-reference = "3.0.0"
+
+[build-dependencies]
+groth16-solana = { path = "../..", features = ["vk", "circom"] }
+rust-witness = "0.1"
