@@ -38,7 +38,7 @@ pub mod circom_prover {
     ///
     /// # Returns
     ///
-    /// A tuple of (proof_a, proof_b, proof_c) in the format expected by groth16-solana
+    /// A triple of (proof_a, proof_b, proof_c) in the format expected by groth16-solana
     ///
     /// # Errors
     ///
@@ -100,9 +100,8 @@ pub mod circom_prover {
 
     /// Convert uncompressed proof to compressed format
     ///
-    /// Compresses proof_a (64 bytes -> 32 bytes) and proof_c (64 bytes -> 32 bytes)
-    /// using arkworks compressed serialization with the sign bit in the most significant byte.
-    /// proof_b remains 128 bytes (already compressed in the standard format).
+    /// Compresses proof_a (64 bytes -> 32 bytes), proof_b (128 bytes -> 64 bytes),
+    /// and proof_c (64 bytes -> 32 bytes) using arkworks compressed serialization.
     ///
     /// # Arguments
     ///
@@ -112,9 +111,9 @@ pub mod circom_prover {
     ///
     /// # Returns
     ///
-    /// A tuple of (compressed_proof_a, proof_b, compressed_proof_c) where:
+    /// A triple of (compressed_proof_a, compressed_proof_b, compressed_proof_c) where:
     /// - compressed_proof_a: 32 bytes
-    /// - proof_b: 128 bytes (unchanged)
+    /// - compressed_proof_b: 64 bytes
     /// - compressed_proof_c: 32 bytes
     ///
     /// # Errors
@@ -124,32 +123,21 @@ pub mod circom_prover {
         proof_a: &[u8; 64],
         proof_b: &[u8; 128],
         proof_c: &[u8; 64],
-    ) -> Result<([u8; 32], [u8; 128], [u8; 32]), Groth16Error> {
-        use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
-        use solana_bn254::compression::prelude::convert_endianness;
-        type G1 = ark_bn254::g1::G1Affine;
+    ) -> Result<([u8; 32], [u8; 64], [u8; 32]), Groth16Error> {
+        use solana_bn254::compression::prelude::{alt_bn128_g1_compress, alt_bn128_g2_compress};
 
-        // Convert proof_a from BE to LE, deserialize, and compress
-        let proof_a_le = convert_endianness::<32, 64>(proof_a);
-        let proof_a_point = G1::deserialize_with_mode(&proof_a_le[..], Compress::No, Validate::Yes)?;
+        // Compress G1 points using solana_bn254
+        let compressed_a =
+            alt_bn128_g1_compress(proof_a).map_err(|_| Groth16Error::ProofConversionError)?;
 
-        let mut compressed_a_le = [0u8; 32];
-        proof_a_point.serialize_with_mode(&mut compressed_a_le[..], Compress::Yes)?;
+        let compressed_c =
+            alt_bn128_g1_compress(proof_c).map_err(|_| Groth16Error::ProofConversionError)?;
 
-        // Convert back to BE
-        let compressed_a: [u8; 32] = convert_endianness::<32, 32>(&compressed_a_le);
+        // Compress G2 point using solana_bn254
+        let compressed_b =
+            alt_bn128_g2_compress(proof_b).map_err(|_| Groth16Error::ProofConversionError)?;
 
-        // Convert proof_c from BE to LE, deserialize, and compress
-        let proof_c_le = convert_endianness::<32, 64>(proof_c);
-        let proof_c_point = G1::deserialize_with_mode(&proof_c_le[..], Compress::No, Validate::Yes)?;
-
-        let mut compressed_c_le = [0u8; 32];
-        proof_c_point.serialize_with_mode(&mut compressed_c_le[..], Compress::Yes)?;
-
-        // Convert back to BE
-        let compressed_c: [u8; 32] = convert_endianness::<32, 32>(&compressed_c_le);
-
-        Ok((compressed_a, *proof_b, compressed_c))
+        Ok((compressed_a, compressed_b, compressed_c))
     }
 
     /// Convert circom-prover public inputs to groth16-solana format
