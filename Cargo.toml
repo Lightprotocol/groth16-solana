@@ -11,15 +11,15 @@ repository = "https://github.com/Lightprotocol/groth16-solana"
 license = "MIT"
 
 [dependencies]
-solana-bn254 = "2"
-thiserror = "1.0"
-ark-serialize = "0.5"
-ark-ec = "0.5"
-ark-ff = "0.5"
-ark-bn254 = "0.5"
-num-bigint = "0.4.6"
-serde = { version = "1.0.195", optional = true, features = ["derive"] }
-serde_json = { version = "1.0.111", optional = true }
+solana-bn254 = "3"
+thiserror = { version = "1.0", default-features = false }
+ark-serialize = { version = "0.5", default-features = false }
+ark-ec = { version = "0.5", default-features = false }
+ark-ff = { version = "0.5", default-features = false }
+ark-bn254 = { version = "0.5", default-features = false, features = ["curve"] }
+num-bigint = { version = "0.4.6", default-features = false }
+serde = { version = "1.0.195", optional = true, default-features = false, features = ["derive", "alloc"] }
+serde_json = { version = "1.0.111", optional = true, default-features = false, features = ["alloc"] }
 circom-prover = { version = "0.1", optional = true }
 ark-groth16 = { version = "0.5", optional = true }
 
