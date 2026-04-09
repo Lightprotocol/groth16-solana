@@ -28,7 +28,9 @@
 use crate::errors::Groth16Error;
 use ark_ff::PrimeField;
 use num_bigint::BigUint;
-use solana_bn254::prelude::{alt_bn128_addition, alt_bn128_multiplication, alt_bn128_pairing};
+use solana_bn254::prelude::{
+    alt_bn128_g1_addition_be, alt_bn128_g1_multiplication_be, alt_bn128_pairing_be,
+};
 
 #[derive(PartialEq, Eq, Debug)]
 pub struct Groth16Verifyingkey<'a> {
@@ -176,12 +178,12 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
             if CHECK && !is_less_than_bn254_field_size_be(input) {
                 return Err(Groth16Error::PublicInputGreaterThanFieldSize);
             }
-            let mul_res = alt_bn128_multiplication(
+            let mul_res = alt_bn128_g1_multiplication_be(
                 &[&self.verifyingkey.vk_ic[i + 1][..], &input[..]].concat(),
             )
             .map_err(|_| Groth16Error::PreparingInputsG1MulFailed)?;
             prepared_public_inputs =
-                alt_bn128_addition(&[&mul_res[..], &prepared_public_inputs[..]].concat())
+                alt_bn128_g1_addition_be(&[&mul_res[..], &prepared_public_inputs[..]].concat())
                     .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?[..]
                     .try_into()
                     .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?;
@@ -221,10 +223,10 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
             //    wire, and add to the running kSum.
             let extra_ic = &self.verifyingkey.vk_ic[NR_INPUTS + 1];
             let mul_res =
-                alt_bn128_multiplication(&[&extra_ic[..], &hashed[..]].concat())
+                alt_bn128_g1_multiplication_be(&[&extra_ic[..], &hashed[..]].concat())
                     .map_err(|_| Groth16Error::PreparingInputsG1MulFailed)?;
             prepared_public_inputs =
-                alt_bn128_addition(&[&mul_res[..], &prepared_public_inputs[..]].concat())
+                alt_bn128_g1_addition_be(&[&mul_res[..], &prepared_public_inputs[..]].concat())
                     .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?[..]
                     .try_into()
                     .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?;
@@ -232,7 +234,7 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
             // 3. Add the raw commitment G1 point itself to kSum
             //    (verify.go:113-115).
             prepared_public_inputs =
-                alt_bn128_addition(&[&commitment[..], &prepared_public_inputs[..]].concat())
+                alt_bn128_g1_addition_be(&[&commitment[..], &prepared_public_inputs[..]].concat())
                     .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?[..]
                     .try_into()
                     .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?;
@@ -270,7 +272,7 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
         ]
         .concat();
 
-        let pairing_res = alt_bn128_pairing(pairing_input.as_slice())
+        let pairing_res = alt_bn128_pairing_be(pairing_input.as_slice())
             .map_err(|_| Groth16Error::ProofVerificationFailed)?;
 
         if pairing_res[31] != 1 {
@@ -302,7 +304,7 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
                 g.as_slice(),
             ]
             .concat();
-            let pok_res = alt_bn128_pairing(pok_input.as_slice())
+            let pok_res = alt_bn128_pairing_be(pok_input.as_slice())
                 .map_err(|_| Groth16Error::CommitmentPokVerificationFailed)?;
             if pok_res[31] != 1 {
                 return Err(Groth16Error::CommitmentPokVerificationFailed);

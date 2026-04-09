@@ -11,6 +11,10 @@ resolver = "2"
 [workspace.dependencies]
 blake3 = "=1.8.2"
 
+[lints.rust.unexpected_cfgs]
+level = "warn"
+check-cfg = ['cfg(target_os, values("solana"))']
+
 [package]
 name = "groth16-solana"
 version = "0.2.0"
