@@ -54,3 +54,9 @@ pub mod vk_parser;
 
 #[cfg(feature = "circom")]
 pub mod proof_parser;
+
+#[cfg(feature = "bsb22")]
+pub mod hash_to_field;
+
+#[cfg(feature = "bsb22")]
+pub mod gnark_vk_parser;

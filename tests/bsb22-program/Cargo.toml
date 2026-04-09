@@ -1,0 +1,54 @@
+[package]
+name = "bsb22-integration-program"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# Tiny Solana program that verifies a BSB22 Groth16 proof inside an
+# instruction. Exists so we can run `cargo build-sbf` and load the
+# resulting .so into litesvm to empirically measure the on-chain
+# compute-unit cost of Groth16Verifier::new_with_commitment + verify.
+#
+# Build workflow:
+#   cargo build-sbf --manifest-path tests/bsb22-program/Cargo.toml
+#   cargo test       --manifest-path tests/bsb22-program/Cargo.toml
+#
+# The cdylib produces target/deploy/bsb22_integration_program.so which
+# the litesvm test loads via include_bytes!. `cargo test-sbf` chains
+# both steps automatically.
+
+[lints.rust.unexpected_cfgs]
+level = "warn"
+check-cfg = [
+    "cfg(target_os, values(\"solana\"))",
+    "cfg(feature, values(\"custom-heap\", \"custom-panic\"))",
+]
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+groth16-solana = { path = "../..", features = ["bsb22"] }
+solana-program = "2.2"
+# Force the blake3 workspace pin so the constant_time_eq chain
+# stays on 0.3.x. Declared here even though we don't use blake3
+# directly because cargo's workspace unification only kicks in when
+# a member crate pulls it in.
+blake3 = { workspace = true }
+
+[build-dependencies]
+groth16-solana = { path = "../..", features = ["bsb22"] }
+
+[dev-dependencies]
+# Pin the solana-* test-side crates to the 3.0.x / 3.1.x series that
+# litesvm 0.9 uses. Tilde constraints match plonk-solana's working
+# setup and avoid pulling in bleeding-edge 3.0.14+ patch versions
+# that break the SBF toolchain's rustc 1.84.
+litesvm = "0.9"
+solana-compute-budget = "~3.1"
+solana-keypair = "~3.1"
+solana-signer = "~3.0"
+solana-instruction = "~3.1"
+solana-message = "~3.0"
+solana-transaction = { version = "~3.0", features = ["verify", "bincode"] }
+solana-pubkey = "~3.0"

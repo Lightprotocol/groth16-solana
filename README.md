@@ -51,6 +51,83 @@ In this repo:
 - npm i
 - npm run parse-vk <inputFile>
 
+## BSB22 commitments (gnark `logderivlookup` / `api.Commit`)
+
+Enable the `bsb22` feature to verify gnark Groth16 proofs that carry a single
+BSB22 (Bowe-Sankaranarayanan-Bonneau 2022) Pedersen commitment. This is the
+shape every gnark circuit ends up with as soon as it touches
+`std/lookup/logderivlookup` or any emulated-field range-check helper, because
+gnark's `multicommit.WithCommitment` merges every deferred commit callback
+into a single `api.Commit()` at finalization (see
+`std/multicommit/nativecommit.go:89`).
+
+```toml
+[dependencies]
+groth16-solana = { version = "0.2", features = ["bsb22"] }
+```
+
+The `bsb22` feature adds:
+
+- `Groth16Verifier::new_with_commitment(...)` — alongside the existing
+  vanilla `new`. Same length checks, plus `vk_ic.len() == nr_pubinputs + 2`
+  (gnark appends one extra K column for the commitment-derived hash wire).
+- Two `Option`-typed fields on `Groth16Verifyingkey`:
+  `vk_commitment_g2` and `vk_commitment_g_sigma_neg_g2`. The vanilla
+  constructor `new` rejects vks where these are set, so existing callers
+  cannot accidentally feed a BSB22 vk through the wrong path.
+- `groth16_solana::hash_to_field::hash_to_field_bn254_fr` — RFC 9380
+  `expand_message_xmd` over SHA-256, byte-exact with gnark-crypto's
+  `ecc/bn254/fr/element.go::Hash`.
+- `groth16_solana::gnark_vk_parser::parse_gnark_vk_bytes` — parser for
+  gnark's `VerifyingKey.WriteRawTo` binary, including the trailing
+  `PublicAndCommitmentCommitted` and `CommitmentKeys` sections.
+  Returns a `Groth16VerifyingkeyOwned` which exposes
+  `as_borrowed()` for use with the verifier API. Multi-commitment vks
+  (rare; typical when a circuit calls raw `api.Commit` more than once)
+  are rejected with `Groth16Error::Bsb22UnsupportedMultiCommitment`.
+
+**Empirical on-chain cost: ~223.5k CU** per BSB22 verify, measured
+end to end with `solana-bn254` v3, the `sol_sha256` syscall for
+hash-to-field, and stack-allocated `expand_message_xmd` buffers
+(zero heap allocations on the hot path). Re-measure via:
+
+```sh
+cargo build-sbf --manifest-path tests/bsb22-program/Cargo.toml
+cargo test     --manifest-path tests/bsb22-program/Cargo.toml -- --nocapture
+```
+
+The test asserts the cost stays under 350k CU and logs the exact
+figure for each run. Rough breakdown of the BSB22-specific work on
+top of vanilla Groth16 verify:
+
+| Component                                  |
+|--------------------------------------------|
+| `expand_message_xmd` SHA-256 (3 blocks, via `sol_sha256` syscall) |
+| 1 G1 scalar mul (BSB22 K column extension) |
+| 2 G1 additions (MSM term + commitment)     |
+| 1 2-pair `alt_bn128_pairing` (Pedersen PoK)|
+
+### gnark fixture
+
+A worked example lives at `tests/bsb22/gnark-fixture/main.go`: a single Go
+file that defines three circuit variants (1, 2, and 3 `logderivlookup`
+queries respectively, all merged into one BSB22 commitment by gnark) and
+exposes `Setup` / `Prove` / `NativeVerify` via cgo. The Rust integration
+test crate `tests/bsb22/` compiles it to a C archive at build time, runs
+bindgen, and exercises the verifier on real proofs from each variant. To
+work with the fixture you need a Go toolchain installed (gnark v0.14).
+
+```sh
+cargo test -p groth16-solana                    # vanilla, default features
+cargo test -p groth16-solana --features bsb22   # adds BSB22 unit tests
+cargo test -p groth16-solana-tests-bsb22        # FFI integration tests (requires Go)
+```
+
+The upstream byte-exact reference verifier (Rust port of gnark's
+`backend/groth16/bn254/verify.go`, single-commitment) lives at
+`/Users/ananas/dev/experiments/bsb22-minimal/ffi/src/lib.rs` and was used
+as the porting template for this work.
+
 ## Audit
 The groth16_solana release 0.0.1 has been audited during the Light Protocol v3 audit. Check out the report [here](https://file.notion.so/f/f/3e18f32c-2f42-4786-8870-c571eb0af77e/ebf1b371-2456-4127-b419-1a9812108368/Light_Protocol_V3_Audit_Report.pdf?id=2169256e-e998-4d50-a922-4602a20fe65b&table=block&spaceId=3e18f32c-2f42-4786-8870-c571eb0af77e&expirationTimestamp=1722110400000&signature=Q4NG6VMKx8UqG-xze7eKwdYGINTlIoC7-TI49wGJGSU&downloadName=Light+Protocol+V3+Audit+Report.pdf). 
 

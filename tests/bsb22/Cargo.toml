@@ -1,0 +1,26 @@
+[package]
+name = "groth16-solana-tests-bsb22"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# Integration tests for the BSB22 commitment path. Compiles the
+# in-repo gnark fixture (gnark-fixture/) to a C archive via cgo,
+# generates Rust FFI bindings with bindgen, and exercises the
+# Groth16Verifier::new_with_commitment path on real proofs from each
+# variant (1, 2, 3 logderivlookup queries).
+
+[lib]
+path = "src/lib.rs"
+
+[build-dependencies]
+bindgen = "0.69"
+
+[dependencies]
+# We need groth16-solana for the bindgen `mod bind` block to live
+# inside lib.rs (since #[cfg(test)] gates the FFI tests but the FFI
+# bindings module itself sits at lib level).
+groth16-solana = { path = "../..", features = ["bsb22"] }
+
+[dev-dependencies]
+tempfile = "3"

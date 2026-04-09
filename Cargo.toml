@@ -1,6 +1,15 @@
 [workspace]
-members = [".", "tests/rust-vk"]
+members = [".", "tests/rust-vk", "tests/bsb22", "tests/bsb22-program"]
 resolver = "2"
+
+# Pin transitive deps that would otherwise require edition2024 and
+# break `cargo build-sbf` (solana-cargo-build-sbf 3.0.0 ships
+# rustc 1.84). The exact deps to pin follow from the error messages
+# `cargo build-sbf` prints; at the time of writing they were blake3
+# (via constant_time_eq) and borsh-derive (via
+# proc-macro-crate → toml_edit).
+[workspace.dependencies]
+blake3 = "=1.8.2"
 
 [package]
 name = "groth16-solana"
@@ -22,6 +31,7 @@ serde = { version = "1.0.195", optional = true, default-features = false, featur
 serde_json = { version = "1.0.111", optional = true, default-features = false, features = ["alloc"] }
 circom-prover = { version = "0.1", optional = true }
 ark-groth16 = { version = "0.5", optional = true }
+sha2 = { version = "0.10", default-features = false, optional = true }
 
 
 [dev-dependencies]
@@ -33,3 +43,4 @@ serde_json = "1.0.111"
 [features]
 vk = ["serde", "serde_json"]
 circom = ["circom-prover", "ark-groth16"]
+bsb22 = ["sha2"]

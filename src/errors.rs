@@ -28,6 +28,21 @@ pub enum Groth16Error {
     #[cfg(feature = "circom")]
     #[error("Failed to convert proof component to byte array")]
     ProofConversionError,
+    #[cfg(feature = "bsb22")]
+    #[error("MissingCommitmentKey")]
+    MissingCommitmentKey,
+    #[cfg(feature = "bsb22")]
+    #[error("CommitmentPokVerificationFailed")]
+    CommitmentPokVerificationFailed,
+    #[cfg(feature = "bsb22")]
+    #[error("Bsb22HashToFieldFailed")]
+    Bsb22HashToFieldFailed,
+    #[cfg(feature = "bsb22")]
+    #[error("Bsb22UnsupportedMultiCommitment")]
+    Bsb22UnsupportedMultiCommitment,
+    #[cfg(feature = "bsb22")]
+    #[error("Bsb22InvalidVerifyingKeyBinary")]
+    Bsb22InvalidVerifyingKeyBinary,
 }
 
 #[cfg(feature = "circom")]
@@ -54,6 +69,16 @@ impl From<Groth16Error> for u32 {
             Groth16Error::ArkworksSerializationError(_) => 10,
             #[cfg(feature = "circom")]
             Groth16Error::ProofConversionError => 11,
+            #[cfg(feature = "bsb22")]
+            Groth16Error::MissingCommitmentKey => 12,
+            #[cfg(feature = "bsb22")]
+            Groth16Error::CommitmentPokVerificationFailed => 13,
+            #[cfg(feature = "bsb22")]
+            Groth16Error::Bsb22HashToFieldFailed => 14,
+            #[cfg(feature = "bsb22")]
+            Groth16Error::Bsb22UnsupportedMultiCommitment => 15,
+            #[cfg(feature = "bsb22")]
+            Groth16Error::Bsb22InvalidVerifyingKeyBinary => 16,
         }
     }
 }
