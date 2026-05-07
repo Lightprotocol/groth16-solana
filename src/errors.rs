@@ -1,3 +1,6 @@
+#[cfg(feature = "circom")]
+use alloc::string::{String, ToString};
+
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq)]

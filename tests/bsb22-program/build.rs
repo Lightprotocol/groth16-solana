@@ -58,9 +58,6 @@ fn main() {
 
     println!("cargo:rerun-if-changed=build.rs");
     for name in FIXTURE_FILES {
-        println!(
-            "cargo:rerun-if-changed=../fixtures/bsb22/{}",
-            name
-        );
+        println!("cargo:rerun-if-changed=../fixtures/bsb22/{}", name);
     }
 }

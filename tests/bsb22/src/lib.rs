@@ -15,7 +15,12 @@
 //! All tests are gated on the `bsb22` feature being enabled in the
 //! parent crate (which the `Cargo.toml` here forces).
 
-#[allow(non_camel_case_types, non_snake_case, non_upper_case_globals, dead_code)]
+#[allow(
+    non_camel_case_types,
+    non_snake_case,
+    non_upper_case_globals,
+    dead_code
+)]
 mod bind {
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
@@ -146,9 +151,7 @@ mod tests {
         // doesn't accept the proof, no port can.
         ffi_native_verify(variant, 7, dir.path()).expect("native verify");
 
-        let vk_path = dir
-            .path()
-            .join(format!("vk_{}.bin", variant));
+        let vk_path = dir.path().join(format!("vk_{}.bin", variant));
         let vk_bytes = std::fs::read(&vk_path).expect("read vk.bin");
 
         let fixture = VariantFixture { vk_bytes, proof };
@@ -158,7 +161,11 @@ mod tests {
     fn assert_verifies(variant: c_int) {
         let (_dir, fix) = setup_variant(variant);
         let vk = parse_gnark_vk_bytes(&fix.vk_bytes).expect("parse vk");
-        assert!(vk.vk_commitment_g2.is_some(), "variant {} should be BSB22", variant);
+        assert!(
+            vk.vk_commitment_g2.is_some(),
+            "variant {} should be BSB22",
+            variant
+        );
         let borrowed = vk.as_borrowed();
 
         let proof_a = fix.proof.proof_a();
@@ -174,7 +181,7 @@ mod tests {
         // which folds e(alpha, beta) onto the LHS, so it expects
         // -Ar. Mirror the negation the vanilla groth16-solana test
         // does, via the `negate_g1_be` public helper.
-        let proof_a_neg = negate_g1_be(&proof_a).unwrap();
+        let proof_a_neg = negate_g1_be(&proof_a);
 
         let mut verifier = Groth16Verifier::new_with_commitment(
             &proof_a_neg,
@@ -210,7 +217,7 @@ mod tests {
         let vk = parse_gnark_vk_bytes(&fix.vk_bytes).expect("parse vk");
         let borrowed = vk.as_borrowed();
 
-        let proof_a = negate_g1_be(&fix.proof.proof_a()).unwrap();
+        let proof_a = negate_g1_be(&fix.proof.proof_a());
         let proof_b = fix.proof.proof_b();
         let proof_c = fix.proof.proof_c();
         let commitment = fix.proof.commitment();
@@ -229,7 +236,10 @@ mod tests {
             &borrowed,
         )
         .expect("new_with_commitment");
-        assert_eq!(verifier.verify(), Err(Groth16Error::ProofVerificationFailed));
+        assert_eq!(
+            verifier.verify(),
+            Err(Groth16Error::ProofVerificationFailed)
+        );
     }
 
     #[test]
@@ -238,7 +248,7 @@ mod tests {
         let vk = parse_gnark_vk_bytes(&fix.vk_bytes).expect("parse vk");
         let borrowed = vk.as_borrowed();
 
-        let proof_a = negate_g1_be(&fix.proof.proof_a()).unwrap();
+        let proof_a = negate_g1_be(&fix.proof.proof_a());
         let proof_b = fix.proof.proof_b();
         let proof_c = fix.proof.proof_c();
         let mut commitment = fix.proof.commitment();
@@ -283,7 +293,7 @@ mod tests {
         let vk = parse_gnark_vk_bytes(&fix.vk_bytes).expect("parse vk");
         let borrowed = vk.as_borrowed();
 
-        let proof_a = negate_g1_be(&fix.proof.proof_a()).unwrap();
+        let proof_a = negate_g1_be(&fix.proof.proof_a());
         let proof_b = fix.proof.proof_b();
         let proof_c = fix.proof.proof_c();
         let commitment = fix.proof.commitment();

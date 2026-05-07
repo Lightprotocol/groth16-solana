@@ -24,18 +24,23 @@ repository = "https://github.com/Lightprotocol/groth16-solana"
 license = "MIT"
 
 [dependencies]
-solana-bn254 = "3"
-thiserror = { version = "1.0", default-features = false }
-ark-serialize = { version = "0.5", default-features = false }
-ark-ec = { version = "0.5", default-features = false }
+thiserror = { version = "2", default-features = false }
 ark-ff = { version = "0.5", default-features = false }
 ark-bn254 = { version = "0.5", default-features = false, features = ["curve"] }
-num-bigint = { version = "0.4.6", default-features = false }
+num-bigint = { version = "0.4.6", default-features = false, optional = true }
 serde = { version = "1.0.195", optional = true, default-features = false, features = ["derive", "alloc"] }
 serde_json = { version = "1.0.111", optional = true, default-features = false, features = ["alloc"] }
 circom-prover = { version = "0.1", optional = true }
 ark-groth16 = { version = "0.5", optional = true }
 sha2 = { version = "0.10", default-features = false, optional = true }
+
+[target.'cfg(target_os = "solana")'.dependencies]
+pinocchio = "0.10"
+
+[target.'cfg(not(target_os = "solana"))'.dependencies]
+solana-bn254 = "3"
+ark-serialize = { version = "0.5", default-features = false }
+ark-ec = { version = "0.5", default-features = false }
 
 
 [dev-dependencies]
@@ -45,6 +50,6 @@ serde = "1.0.195"
 serde_json = "1.0.111"
 
 [features]
-vk = ["serde", "serde_json"]
+vk = ["serde", "serde_json", "dep:num-bigint"]
 circom = ["circom-prover", "ark-groth16"]
 bsb22 = ["sha2"]

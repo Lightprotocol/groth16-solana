@@ -21,10 +21,13 @@
 
 #[cfg(feature = "circom")]
 pub mod circom_prover {
+    extern crate alloc;
     use crate::errors::Groth16Error;
+    use alloc::vec;
+    use alloc::vec::Vec;
     use ark_serialize::{CanonicalSerialize, Compress};
+    use core::ops::Neg;
     use solana_bn254::compression::prelude::convert_endianness;
-    use std::ops::Neg;
 
     /// Convert circom-prover proof to groth16-solana format
     ///

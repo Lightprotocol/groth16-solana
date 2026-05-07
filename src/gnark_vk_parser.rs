@@ -37,8 +37,13 @@
 //! [`Groth16VerifyingkeyOwned`] with both commitment-key fields set
 //! to `None`.
 
+extern crate std;
+
 use crate::errors::Groth16Error;
 use crate::groth16::Groth16Verifyingkey;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 /// Owned counterpart of [`Groth16Verifyingkey`]. The borrowed form
 /// holds `&'a [[u8; 64]]` slices, which makes it perfect for
@@ -323,8 +328,7 @@ pub fn generate_bsb22_vk_file(
     std::fs::create_dir_all(output_dir.as_ref())
         .map_err(|_| Groth16Error::Bsb22InvalidVerifyingKeyBinary)?;
     let out_path = output_dir.as_ref().join(output_filename);
-    std::fs::write(&out_path, rust)
-        .map_err(|_| Groth16Error::Bsb22InvalidVerifyingKeyBinary)?;
+    std::fs::write(&out_path, rust).map_err(|_| Groth16Error::Bsb22InvalidVerifyingKeyBinary)?;
     Ok(())
 }
 
@@ -380,7 +384,10 @@ impl<'a> Cursor<'a> {
 
 #[cfg(test)]
 mod tests {
+    extern crate alloc;
     use super::*;
+    use alloc::vec;
+    use alloc::vec::Vec;
 
     /// Committed variant-1 vk snapshot shared with the `bsb22_e2e`
     /// test in `src/groth16.rs` and the SBF program build.rs. See
@@ -388,8 +395,7 @@ mod tests {
     /// shape (K column count, commitment-key presence), not the
     /// actual coordinates — so regenerating the fixture does not
     /// invalidate any of these tests.
-    const VARIANT_1_VK_BYTES: &[u8] =
-        include_bytes!("../tests/fixtures/bsb22/vk_variant_1.bin");
+    const VARIANT_1_VK_BYTES: &[u8] = include_bytes!("../tests/fixtures/bsb22/vk_variant_1.bin");
 
     #[test]
     fn parse_variant_1_vk_shape() {

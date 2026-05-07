@@ -26,11 +26,8 @@
 //! See functional test for a running example how to use this library.
 //!
 use crate::errors::Groth16Error;
+use crate::syscalls::{g1_addition_be, g1_multiplication_be, pairing_be};
 use ark_ff::PrimeField;
-use num_bigint::BigUint;
-use solana_bn254::prelude::{
-    alt_bn128_g1_addition_be, alt_bn128_g1_multiplication_be, alt_bn128_pairing_be,
-};
 
 #[derive(PartialEq, Eq, Debug)]
 pub struct Groth16Verifyingkey<'a> {
@@ -178,15 +175,17 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
             if CHECK && !is_less_than_bn254_field_size_be(input) {
                 return Err(Groth16Error::PublicInputGreaterThanFieldSize);
             }
-            let mul_res = alt_bn128_g1_multiplication_be(
-                &[&self.verifyingkey.vk_ic[i + 1][..], &input[..]].concat(),
-            )
-            .map_err(|_| Groth16Error::PreparingInputsG1MulFailed)?;
-            prepared_public_inputs =
-                alt_bn128_g1_addition_be(&[&mul_res[..], &prepared_public_inputs[..]].concat())
-                    .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?[..]
-                    .try_into()
-                    .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?;
+            let mut mul_input = [0u8; 96];
+            mul_input[..64].copy_from_slice(&self.verifyingkey.vk_ic[i + 1]);
+            mul_input[64..].copy_from_slice(input);
+            let mul_res = g1_multiplication_be(&mul_input)
+                .map_err(|_| Groth16Error::PreparingInputsG1MulFailed)?;
+
+            let mut add_input = [0u8; 128];
+            add_input[..64].copy_from_slice(&mul_res);
+            add_input[64..].copy_from_slice(&prepared_public_inputs);
+            prepared_public_inputs = g1_addition_be(&add_input)
+                .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?;
         }
 
         // BSB22 extension: when the proof carries a Pedersen
@@ -213,31 +212,32 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
         if let Some(commitment) = self.proof_commitment {
             // 1. Hash the commitment to a field element using gnark's
             //    DST "bsb22-commitment" (constraint/commitment.go:7).
-            let hashed = crate::hash_to_field::hash_to_field_bn254_fr(
-                &commitment[..],
-                b"bsb22-commitment",
-            )?;
+            let hashed =
+                crate::hash_to_field::hash_to_field_bn254_fr(&commitment[..], b"bsb22-commitment")?;
 
             // 2. Multiply by the trailing K column (vk_ic[NR_INPUTS + 1])
             //    that gnark appended for the commitment-derived hash
             //    wire, and add to the running kSum.
             let extra_ic = &self.verifyingkey.vk_ic[NR_INPUTS + 1];
-            let mul_res =
-                alt_bn128_g1_multiplication_be(&[&extra_ic[..], &hashed[..]].concat())
-                    .map_err(|_| Groth16Error::PreparingInputsG1MulFailed)?;
-            prepared_public_inputs =
-                alt_bn128_g1_addition_be(&[&mul_res[..], &prepared_public_inputs[..]].concat())
-                    .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?[..]
-                    .try_into()
-                    .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?;
+            let mut mul_input = [0u8; 96];
+            mul_input[..64].copy_from_slice(extra_ic);
+            mul_input[64..].copy_from_slice(&hashed);
+            let mul_res = g1_multiplication_be(&mul_input)
+                .map_err(|_| Groth16Error::PreparingInputsG1MulFailed)?;
+
+            let mut add_input = [0u8; 128];
+            add_input[..64].copy_from_slice(&mul_res);
+            add_input[64..].copy_from_slice(&prepared_public_inputs);
+            prepared_public_inputs = g1_addition_be(&add_input)
+                .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?;
 
             // 3. Add the raw commitment G1 point itself to kSum
             //    (verify.go:113-115).
-            prepared_public_inputs =
-                alt_bn128_g1_addition_be(&[&commitment[..], &prepared_public_inputs[..]].concat())
-                    .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?[..]
-                    .try_into()
-                    .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?;
+            let mut add_input = [0u8; 128];
+            add_input[..64].copy_from_slice(commitment);
+            add_input[64..].copy_from_slice(&prepared_public_inputs);
+            prepared_public_inputs = g1_addition_be(&add_input)
+                .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?;
         }
 
         self.prepared_public_inputs = prepared_public_inputs;
@@ -260,20 +260,19 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
     fn verify_common<const CHECK: bool>(&mut self) -> Result<(), Groth16Error> {
         self.prepare_inputs::<CHECK>()?;
 
-        let pairing_input = [
-            self.proof_a.as_slice(),
-            self.proof_b.as_slice(),
-            self.prepared_public_inputs.as_slice(),
-            self.verifyingkey.vk_gamma_g2.as_slice(),
-            self.proof_c.as_slice(),
-            self.verifyingkey.vk_delta_g2.as_slice(),
-            self.verifyingkey.vk_alpha_g1.as_slice(),
-            self.verifyingkey.vk_beta_g2.as_slice(),
-        ]
-        .concat();
+        // 4 pairing pairs: (proof_a, proof_b), (prepared, gamma), (proof_c, delta), (alpha, beta)
+        let mut pairing_input = [0u8; 768];
+        pairing_input[0..64].copy_from_slice(self.proof_a);
+        pairing_input[64..192].copy_from_slice(self.proof_b);
+        pairing_input[192..256].copy_from_slice(&self.prepared_public_inputs);
+        pairing_input[256..384].copy_from_slice(&self.verifyingkey.vk_gamma_g2);
+        pairing_input[384..448].copy_from_slice(self.proof_c);
+        pairing_input[448..576].copy_from_slice(&self.verifyingkey.vk_delta_g2);
+        pairing_input[576..640].copy_from_slice(&self.verifyingkey.vk_alpha_g1);
+        pairing_input[640..768].copy_from_slice(&self.verifyingkey.vk_beta_g2);
 
-        let pairing_res = alt_bn128_pairing_be(pairing_input.as_slice())
-            .map_err(|_| Groth16Error::ProofVerificationFailed)?;
+        let pairing_res =
+            pairing_be(&pairing_input).map_err(|_| Groth16Error::ProofVerificationFailed)?;
 
         if pairing_res[31] != 1 {
             return Err(Groth16Error::ProofVerificationFailed);
@@ -297,14 +296,12 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
             self.verifyingkey.vk_commitment_g_sigma_neg_g2.as_ref(),
             self.verifyingkey.vk_commitment_g2.as_ref(),
         ) {
-            let pok_input = [
-                commitment.as_slice(),
-                g_sigma_neg.as_slice(),
-                pok.as_slice(),
-                g.as_slice(),
-            ]
-            .concat();
-            let pok_res = alt_bn128_pairing_be(pok_input.as_slice())
+            let mut pok_input = [0u8; 384];
+            pok_input[0..64].copy_from_slice(commitment);
+            pok_input[64..192].copy_from_slice(g_sigma_neg);
+            pok_input[192..256].copy_from_slice(pok);
+            pok_input[256..384].copy_from_slice(g);
+            let pok_res = pairing_be(&pok_input)
                 .map_err(|_| Groth16Error::CommitmentPokVerificationFailed)?;
             if pok_res[31] != 1 {
                 return Err(Groth16Error::CommitmentPokVerificationFailed);
@@ -316,8 +313,21 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
 }
 
 pub fn is_less_than_bn254_field_size_be(bytes: &[u8; 32]) -> bool {
-    let bigint = BigUint::from_bytes_be(bytes);
-    bigint < ark_bn254::Fr::MODULUS.into()
+    let value = ark_ff::BigInt::<4>::new([
+        u64::from_be_bytes([
+            bytes[24], bytes[25], bytes[26], bytes[27], bytes[28], bytes[29], bytes[30], bytes[31],
+        ]),
+        u64::from_be_bytes([
+            bytes[16], bytes[17], bytes[18], bytes[19], bytes[20], bytes[21], bytes[22], bytes[23],
+        ]),
+        u64::from_be_bytes([
+            bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
+        ]),
+        u64::from_be_bytes([
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+        ]),
+    ]);
+    value < ark_bn254::Fr::MODULUS.into()
 }
 
 /// Negate a BN254 G1 point serialized as 64 uncompressed big-endian
@@ -330,46 +340,70 @@ pub fn is_less_than_bn254_field_size_be(bytes: &[u8; 32]) -> bool {
 /// Also used internally by [`crate::proof_parser::circom_prover::convert_proof`]
 /// via a slightly different interface that operates on an
 /// `ark_groth16::Proof` directly.
-pub fn negate_g1_be(g1: &[u8; 64]) -> Result<[u8; 64], Groth16Error> {
-    use ark_ec::AffineRepr;
-    use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
-
-    // BE -> arkworks LE (reverse each 32-byte half).
-    let mut le = [0u8; 64];
-    for i in 0..32 {
-        le[i] = g1[31 - i];
-        le[32 + i] = g1[63 - i];
+/// Negate a BN254 G1 point serialized as 64 uncompressed big-endian
+/// bytes (X || Y). For (x, y) the negation is (x, p - y) where p is
+/// the BN254 base field (Fq) modulus.
+pub fn negate_g1_be(g1: &[u8; 64]) -> [u8; 64] {
+    // Identity check: all zeros -> identity, negation is identity.
+    if *g1 == [0u8; 64] {
+        return [0u8; 64];
     }
-    let point = ark_bn254::G1Affine::deserialize_with_mode(&le[..], Compress::No, Validate::Yes)
-        .map_err(|_| Groth16Error::InvalidG1Length)?;
-
-    // Negate and serialize back to LE.
-    let neg = -point;
-    let mut neg_le = [0u8; 64];
-    let (x, y) = neg.xy().ok_or(Groth16Error::InvalidG1Length)?;
-    x.serialize_with_mode(&mut neg_le[..32], Compress::No)
-        .map_err(|_| Groth16Error::InvalidG1Length)?;
-    y.serialize_with_mode(&mut neg_le[32..], Compress::No)
-        .map_err(|_| Groth16Error::InvalidG1Length)?;
-
-    // LE -> BE.
-    let mut be = [0u8; 64];
-    for i in 0..32 {
-        be[i] = neg_le[31 - i];
-        be[32 + i] = neg_le[63 - i];
+    let mut result = [0u8; 64];
+    // X coordinate is unchanged.
+    result[..32].copy_from_slice(&g1[..32]);
+    // BN254 Fq modulus (big-endian u64 limbs, most significant first).
+    const FQ: [u64; 4] = [
+        0x30644e72e131a029,
+        0xb85045b68181585d,
+        0x97816a916871ca8d,
+        0x3c208c16d87cfd47,
+    ];
+    let y = [
+        u64::from_be_bytes([
+            g1[32], g1[33], g1[34], g1[35], g1[36], g1[37], g1[38], g1[39],
+        ]),
+        u64::from_be_bytes([
+            g1[40], g1[41], g1[42], g1[43], g1[44], g1[45], g1[46], g1[47],
+        ]),
+        u64::from_be_bytes([
+            g1[48], g1[49], g1[50], g1[51], g1[52], g1[53], g1[54], g1[55],
+        ]),
+        u64::from_be_bytes([
+            g1[56], g1[57], g1[58], g1[59], g1[60], g1[61], g1[62], g1[63],
+        ]),
+    ];
+    // Compute p - y with borrow (big-endian: limb[0] is most significant).
+    let mut borrow: u64 = 0;
+    let mut neg_y = [0u64; 4];
+    let mut i = 3;
+    loop {
+        let (diff, b1) = FQ[i].overflowing_sub(y[i]);
+        let (diff, b2) = diff.overflowing_sub(borrow);
+        neg_y[i] = diff;
+        borrow = (b1 as u64) + (b2 as u64);
+        if i == 0 {
+            break;
+        }
+        i -= 1;
     }
-    Ok(be)
+    result[32..40].copy_from_slice(&neg_y[0].to_be_bytes());
+    result[40..48].copy_from_slice(&neg_y[1].to_be_bytes());
+    result[48..56].copy_from_slice(&neg_y[2].to_be_bytes());
+    result[56..64].copy_from_slice(&neg_y[3].to_be_bytes());
+    result
 }
 
 #[cfg(test)]
 mod tests {
+    extern crate alloc;
     use crate::decompression::{decompress_g1, decompress_g2};
+    use alloc::vec::Vec;
 
     use super::*;
     use ark_bn254;
     use ark_ff::BigInteger;
     use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
-    use std::ops::Neg;
+    use core::ops::Neg;
     type G1 = ark_bn254::g1::G1Affine;
     type G2 = ark_bn254::g2::G2Affine;
     use solana_bn254::compression::prelude::convert_endianness;
@@ -554,10 +588,10 @@ mod tests {
         let bytes = [0u8; 32];
         assert!(is_less_than_bn254_field_size_be(&bytes));
 
-        let bytes: [u8; 32] = BigUint::from(ark_bn254::Fr::MODULUS)
-            .to_bytes_be()
-            .try_into()
-            .unwrap();
+        let modulus_le = ark_bn254::Fr::MODULUS.to_bytes_le();
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(&modulus_le);
+        bytes.reverse();
         assert!(!is_less_than_bn254_field_size_be(&bytes));
     }
 
@@ -720,8 +754,7 @@ mod tests {
         // consistent snapshot from a single gnark `Setup` + `Prove`
         // for `Lookups1Circuit` with X=7. See
         // tests/fixtures/bsb22/README.md for the regeneration recipe.
-        const VK_BYTES: &[u8] =
-            include_bytes!("../tests/fixtures/bsb22/vk_variant_1.bin");
+        const VK_BYTES: &[u8] = include_bytes!("../tests/fixtures/bsb22/vk_variant_1.bin");
         const PROOF_A_BYTES: &[u8; 64] =
             include_bytes!("../tests/fixtures/bsb22/proof_a_variant_1.bin");
         const PROOF_B_BYTES: &[u8; 128] =
@@ -730,8 +763,7 @@ mod tests {
             include_bytes!("../tests/fixtures/bsb22/proof_c_variant_1.bin");
         const COMMITMENT_BYTES: &[u8; 64] =
             include_bytes!("../tests/fixtures/bsb22/commitment_variant_1.bin");
-        const POK_BYTES: &[u8; 64] =
-            include_bytes!("../tests/fixtures/bsb22/pok_variant_1.bin");
+        const POK_BYTES: &[u8; 64] = include_bytes!("../tests/fixtures/bsb22/pok_variant_1.bin");
         const PUBLIC_INPUT_BYTES: &[u8; 32] =
             include_bytes!("../tests/fixtures/bsb22/public_input_variant_1.bin");
 
@@ -742,7 +774,7 @@ mod tests {
             assert!(vk_owned.vk_commitment_g2.is_some());
             let vk = vk_owned.as_borrowed();
 
-            let proof_a = negate_g1_be(PROOF_A_BYTES).unwrap();
+            let proof_a = negate_g1_be(PROOF_A_BYTES);
             let proof_b = *PROOF_B_BYTES;
             let proof_c = *PROOF_C_BYTES;
             let commitment = *COMMITMENT_BYTES;
@@ -767,7 +799,7 @@ mod tests {
             let vk_owned = parse_gnark_vk_bytes(VK_BYTES).unwrap();
             let vk = vk_owned.as_borrowed();
 
-            let proof_a = negate_g1_be(PROOF_A_BYTES).unwrap();
+            let proof_a = negate_g1_be(PROOF_A_BYTES);
             let proof_b = *PROOF_B_BYTES;
             let proof_c = *PROOF_C_BYTES;
             let commitment = *COMMITMENT_BYTES;
@@ -799,11 +831,10 @@ mod tests {
             // rejected by `new_with_commitment` length check.
             let vk_owned = parse_gnark_vk_bytes(VK_BYTES).unwrap();
             let mut vk = vk_owned.as_borrowed();
-            let truncated: Vec<[u8; 64]> =
-                vk_owned.vk_ic[..vk_owned.vk_ic.len() - 1].to_vec();
+            let truncated: Vec<[u8; 64]> = vk_owned.vk_ic[..vk_owned.vk_ic.len() - 1].to_vec();
             vk.vk_ic = &truncated;
 
-            let proof_a = negate_g1_be(PROOF_A_BYTES).unwrap();
+            let proof_a = negate_g1_be(PROOF_A_BYTES);
             let proof_b = *PROOF_B_BYTES;
             let proof_c = *PROOF_C_BYTES;
             let commitment = *COMMITMENT_BYTES;

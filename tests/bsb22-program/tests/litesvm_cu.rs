@@ -33,7 +33,7 @@ const PUBLIC_INPUT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/public_inp
 
 fn build_ix_data() -> Vec<u8> {
     let proof_a_fixed: [u8; 64] = PROOF_A.try_into().expect("proof_a is 64 bytes");
-    let proof_a_neg = negate_g1_be(&proof_a_fixed).expect("negate proof.A");
+    let proof_a_neg = negate_g1_be(&proof_a_fixed);
     let mut data = Vec::with_capacity(416);
     data.extend_from_slice(&proof_a_neg);
     data.extend_from_slice(PROOF_B);
