@@ -45,14 +45,14 @@ const MAX_SCRATCH: usize = 256;
 fn sha256(input: &[u8]) -> [u8; 32] {
     #[cfg(target_os = "solana")]
     {
-        // Raw syscall binding. Signature from
-        // solana-define-syscall/src/definitions.rs:
+        // Use pinocchio's `define_syscall!`-bound `sol_sha256` rather than a bare
+        // `extern "C"` symbol: under the `static-syscalls` SBF ABI (platform-tools
+        // v1.54+) syscalls are dispatched by compile-time code, so a plain extern
+        // symbol does not resolve and silently leaves the output buffer zeroed.
         //   fn sol_sha256(vals: *const u8, val_len: u64, hash_result: *mut u8) -> u64
         // where `vals` is a pointer to an array of `(ptr, len)` pairs
         // in the form of `&[&[u8]]`; `val_len` is the number of pairs.
-        extern "C" {
-            fn sol_sha256(vals: *const u8, val_len: u64, hash_result: *mut u8) -> u64;
-        }
+        use pinocchio::syscalls::sol_sha256;
 
         let slices: [&[u8]; 1] = [input];
         let mut out = [0u8; 32];
