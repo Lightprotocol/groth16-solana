@@ -32,7 +32,6 @@ serde = { version = "1.0.195", optional = true, default-features = false, featur
 serde_json = { version = "1.0.111", optional = true, default-features = false, features = ["alloc"] }
 circom-prover = { version = "0.1", optional = true }
 ark-groth16 = { version = "0.5", optional = true }
-sha2 = { version = "0.10", default-features = false, optional = true }
 
 [target.'cfg(target_os = "solana")'.dependencies]
 pinocchio = "0.10"
@@ -41,6 +40,11 @@ pinocchio = "0.10"
 solana-bn254 = "3"
 ark-serialize = { version = "0.5", default-features = false }
 ark-ec = { version = "0.5", default-features = false }
+# Pure-Rust SHA-256 for the host build only; on the Solana SBF target
+# hash-to-field uses the `sol_sha256` syscall, so `sha2` is not needed
+# there (see src/hash_to_field.rs). The `bsb22` feature activates this
+# optional dep; that activation is simply a no-op on the solana target.
+sha2 = { version = "0.10", default-features = false, optional = true }
 
 
 [dev-dependencies]

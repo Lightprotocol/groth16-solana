@@ -34,15 +34,15 @@ const PUBLIC_INPUT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/public_inp
 fn build_ix_data() -> Vec<u8> {
     let proof_a_fixed: [u8; 64] = PROOF_A.try_into().expect("proof_a is 64 bytes");
     let proof_a_neg = negate_g1_be(&proof_a_fixed);
-    let mut data = Vec::with_capacity(416);
-    data.extend_from_slice(&proof_a_neg);
-    data.extend_from_slice(PROOF_B);
-    data.extend_from_slice(PROOF_C);
-    data.extend_from_slice(COMMITMENT);
-    data.extend_from_slice(POK);
-    data.extend_from_slice(PUBLIC_INPUT);
-    assert_eq!(data.len(), 416);
-    data
+    let mut instruction_data = Vec::with_capacity(416);
+    instruction_data.extend_from_slice(&proof_a_neg);
+    instruction_data.extend_from_slice(PROOF_B);
+    instruction_data.extend_from_slice(PROOF_C);
+    instruction_data.extend_from_slice(COMMITMENT);
+    instruction_data.extend_from_slice(POK);
+    instruction_data.extend_from_slice(PUBLIC_INPUT);
+    assert_eq!(instruction_data.len(), 416);
+    instruction_data
 }
 
 fn program_id() -> Pubkey {
@@ -82,12 +82,12 @@ fn setup_svm() -> (LiteSVM, Keypair) {
 #[test]
 fn bsb22_verify_on_chain_succeeds_and_reports_cu() {
     let (mut svm, payer) = setup_svm();
-    let data = build_ix_data();
+    let instruction_data = build_ix_data();
 
     let ix = Instruction {
         program_id: program_id(),
         accounts: vec![],
-        data,
+        data: instruction_data,
     };
     let mut tx = Transaction::new_with_payer(&[ix], Some(&payer.pubkey()));
     tx.sign(&[&payer], svm.latest_blockhash());
@@ -104,7 +104,7 @@ fn bsb22_verify_on_chain_succeeds_and_reports_cu() {
 
     // Sanity: the verifier must not exceed the documented soft
     // target. The measured cost at the time this test was added was
-    // ~223k CU with solana-bn254 v3 and the sol_sha256 syscall for
+    // ~212k CU with solana-bn254 v3 and the sol_sha256 syscall for
     // BSB22 hash-to-field. Leave some margin for syscall-cost churn
     // across Solana runtime versions (+50% headroom).
     assert!(
@@ -117,19 +117,22 @@ fn bsb22_verify_on_chain_succeeds_and_reports_cu() {
 #[test]
 fn bsb22_verify_on_chain_rejects_mutated_public_input() {
     let (mut svm, payer) = setup_svm();
-    let mut data = build_ix_data();
+    let mut instruction_data = build_ix_data();
     // Flip the last byte of the public input so the extended MSM
     // yields a different kSum and the final pairing check fails.
-    data[415] ^= 1;
+    instruction_data[415] ^= 1;
 
     let ix = Instruction {
         program_id: program_id(),
         accounts: vec![],
-        data,
+        data: instruction_data,
     };
     let mut tx = Transaction::new_with_payer(&[ix], Some(&payer.pubkey()));
     tx.sign(&[&payer], svm.latest_blockhash());
 
-    let res = svm.send_transaction(tx);
-    assert!(res.is_err(), "mutated public input should be rejected");
+    let send_result = svm.send_transaction(tx);
+    assert!(
+        send_result.is_err(),
+        "mutated public input should be rejected"
+    );
 }

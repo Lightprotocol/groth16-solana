@@ -21,16 +21,21 @@ extern crate alloc;
 pub mod decompression;
 pub mod errors;
 pub mod groth16;
-pub mod syscalls;
-
-#[cfg(feature = "vk")]
-pub mod vk_parser;
+pub(crate) mod syscalls;
 
 #[cfg(feature = "circom")]
 pub mod proof_parser;
 
 #[cfg(feature = "bsb22")]
-pub mod hash_to_field;
+pub(crate) mod hash_to_field;
 
-#[cfg(feature = "bsb22")]
-pub mod gnark_vk_parser;
+/// Verifying-key parsers and Rust-const generators, one submodule per
+/// proving stack: [`vk::circom`] for snarkjs JSON keys, [`vk::gnark`]
+/// for gnark `WriteRawTo` binaries (incl. BSB22 commitment keys).
+pub mod vk {
+    #[cfg(feature = "vk")]
+    pub mod circom;
+
+    #[cfg(feature = "bsb22")]
+    pub mod gnark;
+}

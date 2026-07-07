@@ -29,6 +29,15 @@ use crate::errors::Groth16Error;
 use crate::syscalls::{g1_addition_be, g1_multiplication_be, pairing_be};
 use ark_ff::PrimeField;
 
+/// BSB22 Pedersen commitment verifying key.
+/// `g2`             = pedersen.VerifyingKey.G
+/// `g_sigma_neg_g2` = pedersen.VerifyingKey.GSigmaNeg
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+pub struct CommitmentVerifyingKey {
+    pub g2: [u8; 128],
+    pub g_sigma_neg_g2: [u8; 128],
+}
+
 #[derive(PartialEq, Eq, Debug)]
 pub struct Groth16Verifyingkey<'a> {
     pub nr_pubinputs: usize,
@@ -39,18 +48,13 @@ pub struct Groth16Verifyingkey<'a> {
     pub vk_ic: &'a [[u8; 64]],
 
     /// BSB22 Pedersen commitment key — present only when the circuit
-    /// uses lookups / `api.Commit`. Both fields must be set together.
-    /// For our supported circuits this is always exactly one
-    /// commitment thanks to gnark's `multicommit` package merging
+    /// uses lookups / `api.Commit`. Bundling both G2 points into one
+    /// [`CommitmentVerifyingKey`] makes the type enforce that they are
+    /// set together. For our supported circuits this is always exactly
+    /// one commitment thanks to gnark's `multicommit` package merging
     /// deferred callbacks at finalization
     /// (`std/multicommit/nativecommit.go:89`).
-    ///
-    /// `vk_commitment_g2`         = pedersen.VerifyingKey.G
-    /// `vk_commitment_g_sigma_neg_g2` = pedersen.VerifyingKey.GSigmaNeg
-    #[cfg(feature = "bsb22")]
-    pub vk_commitment_g2: Option<[u8; 128]>,
-    #[cfg(feature = "bsb22")]
-    pub vk_commitment_g_sigma_neg_g2: Option<[u8; 128]>,
+    pub vk_commitment: Option<CommitmentVerifyingKey>,
 }
 
 #[derive(PartialEq, Eq, Debug)]
@@ -70,10 +74,35 @@ pub struct Groth16Verifier<'a, const NR_INPUTS: usize> {
     proof_commitment_pok: Option<&'a [u8; 64]>,
 }
 
+/// acc + point * scalar — the recurring MSM step in prepare_inputs.
+/// Builds the 96-byte multiplication input (point || scalar), runs the
+/// BN254 G1 scalar multiplication, then adds the result onto `acc`.
+fn g1_mul_add(
+    point: &[u8; 64],
+    scalar: &[u8; 32],
+    acc: &[u8; 64],
+) -> Result<[u8; 64], Groth16Error> {
+    let mut mul_input = [0u8; 96];
+    mul_input[..64].copy_from_slice(point);
+    mul_input[64..].copy_from_slice(scalar);
+    let mul_res =
+        g1_multiplication_be(&mul_input).map_err(|_| Groth16Error::PreparingInputsG1MulFailed)?;
+    g1_add(&mul_res, acc)
+}
+
+/// acc + point for BN254 G1 points — builds the 128-byte addition
+/// input (point || acc) and runs the syscall.
+fn g1_add(point: &[u8; 64], acc: &[u8; 64]) -> Result<[u8; 64], Groth16Error> {
+    let mut add_input = [0u8; 128];
+    add_input[..64].copy_from_slice(point);
+    add_input[64..].copy_from_slice(acc);
+    g1_addition_be(&add_input).map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)
+}
+
 impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
-    /// Constructor for vanilla Groth16 proofs (no BSB22 commitment).
-    /// When the `bsb22` feature is enabled, this rejects verifying
-    /// keys that carry commitment-key fields — those proofs must use
+    /// Constructor for standard Groth16 proofs (no BSB22 commitment).
+    /// This rejects verifying keys that carry a commitment key —
+    /// those proofs must use
     /// [`Groth16Verifier::new_with_commitment`] instead.
     pub fn new<'a>(
         proof_a: &'a [u8; 64],
@@ -82,33 +111,16 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
         public_inputs: &'a [[u8; 32]; NR_INPUTS],
         verifyingkey: &'a Groth16Verifyingkey<'a>,
     ) -> Result<Groth16Verifier<'a, NR_INPUTS>, Groth16Error> {
-        if proof_a.len() != 64 {
-            return Err(Groth16Error::InvalidG1Length);
-        }
-
-        if proof_b.len() != 128 {
-            return Err(Groth16Error::InvalidG2Length);
-        }
-
-        if proof_c.len() != 64 {
-            return Err(Groth16Error::InvalidG1Length);
-        }
-
         if public_inputs.len() + 1 != verifyingkey.vk_ic.len() {
             return Err(Groth16Error::InvalidPublicInputsLength);
         }
 
-        // The vanilla constructor only accepts vanilla verifying
-        // keys: a vk that carries either Pedersen commitment-key
-        // field is implicitly a BSB22 vk and must be paired with
+        // This constructor only accepts commitment-free verifying
+        // keys: a vk that carries a Pedersen commitment key is
+        // implicitly a BSB22 vk and must be paired with
         // `new_with_commitment`.
-        #[cfg(feature = "bsb22")]
-        {
-            if verifyingkey.vk_commitment_g2.is_some()
-                || verifyingkey.vk_commitment_g_sigma_neg_g2.is_some()
-            {
-                return Err(Groth16Error::IncompatibleVerifyingKeyWithNrPublicInputs);
-            }
+        if verifyingkey.vk_commitment.is_some() {
+            return Err(Groth16Error::IncompatibleVerifyingKeyWithNrPublicInputs);
         }
 
         Ok(Groth16Verifier {
@@ -127,8 +139,8 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
 
     /// Constructor for BSB22 Groth16 proofs that carry one Pedersen
     /// commitment plus its knowledge proof. The verifying key must
-    /// have **both** `vk_commitment_g2` and `vk_commitment_g_sigma_neg_g2`
-    /// set, and `vk_ic.len()` must equal `public_inputs.len() + 2`
+    /// have its `vk_commitment` set, and `vk_ic.len()` must equal
+    /// `public_inputs.len() + 2`
     /// (the trailing `vk_ic` slot is the K column gnark appends for
     /// the commitment-derived hash wire). Multi-commitment circuits
     /// (more than one commitment per proof) are NOT supported — use
@@ -150,9 +162,7 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
             return Err(Groth16Error::InvalidPublicInputsLength);
         }
 
-        if verifyingkey.vk_commitment_g2.is_none()
-            || verifyingkey.vk_commitment_g_sigma_neg_g2.is_none()
-        {
+        if verifyingkey.vk_commitment.is_none() {
             return Err(Groth16Error::MissingCommitmentKey);
         }
 
@@ -175,17 +185,8 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
             if CHECK && !is_less_than_bn254_field_size_be(input) {
                 return Err(Groth16Error::PublicInputGreaterThanFieldSize);
             }
-            let mut mul_input = [0u8; 96];
-            mul_input[..64].copy_from_slice(&self.verifyingkey.vk_ic[i + 1]);
-            mul_input[64..].copy_from_slice(input);
-            let mul_res = g1_multiplication_be(&mul_input)
-                .map_err(|_| Groth16Error::PreparingInputsG1MulFailed)?;
-
-            let mut add_input = [0u8; 128];
-            add_input[..64].copy_from_slice(&mul_res);
-            add_input[64..].copy_from_slice(&prepared_public_inputs);
-            prepared_public_inputs = g1_addition_be(&add_input)
-                .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?;
+            prepared_public_inputs =
+                g1_mul_add(&self.verifyingkey.vk_ic[i + 1], input, &prepared_public_inputs)?;
         }
 
         // BSB22 extension: when the proof carries a Pedersen
@@ -201,43 +202,24 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
         // so the BSB22 hash preimage is just the 64-byte commitment —
         // no public-witness concatenation needed.
         //
-        // CU cost (empirically measured end-to-end via the litesvm
-        // test in `tests/bsb22-program/tests/litesvm_cu.rs` with
-        // solana-bn254 v3 + `sol_sha256` syscall + stack-allocated
-        // expand_message_xmd buffers):
-        //   Total BSB22 on-chain verify: ~223,500 CU
-        // Re-run that test to refresh the number after any syscall
-        // cost change in the Solana runtime.
+        // CU cost is measured by tests/bsb22-program/tests/litesvm_cu.rs (source of truth).
         #[cfg(feature = "bsb22")]
         if let Some(commitment) = self.proof_commitment {
             // 1. Hash the commitment to a field element using gnark's
             //    DST "bsb22-commitment" (constraint/commitment.go:7).
-            let hashed =
+            let commitment_hash_fe =
                 crate::hash_to_field::hash_to_field_bn254_fr(&commitment[..], b"bsb22-commitment")?;
 
             // 2. Multiply by the trailing K column (vk_ic[NR_INPUTS + 1])
             //    that gnark appended for the commitment-derived hash
             //    wire, and add to the running kSum.
-            let extra_ic = &self.verifyingkey.vk_ic[NR_INPUTS + 1];
-            let mut mul_input = [0u8; 96];
-            mul_input[..64].copy_from_slice(extra_ic);
-            mul_input[64..].copy_from_slice(&hashed);
-            let mul_res = g1_multiplication_be(&mul_input)
-                .map_err(|_| Groth16Error::PreparingInputsG1MulFailed)?;
-
-            let mut add_input = [0u8; 128];
-            add_input[..64].copy_from_slice(&mul_res);
-            add_input[64..].copy_from_slice(&prepared_public_inputs);
-            prepared_public_inputs = g1_addition_be(&add_input)
-                .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?;
+            let commitment_hash_ic = &self.verifyingkey.vk_ic[NR_INPUTS + 1];
+            prepared_public_inputs =
+                g1_mul_add(commitment_hash_ic, &commitment_hash_fe, &prepared_public_inputs)?;
 
             // 3. Add the raw commitment G1 point itself to kSum
             //    (verify.go:113-115).
-            let mut add_input = [0u8; 128];
-            add_input[..64].copy_from_slice(commitment);
-            add_input[64..].copy_from_slice(&prepared_public_inputs);
-            prepared_public_inputs = g1_addition_be(&add_input)
-                .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?;
+            prepared_public_inputs = g1_add(commitment, &prepared_public_inputs)?;
         }
 
         self.prepared_public_inputs = prepared_public_inputs;
@@ -278,29 +260,44 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
             return Err(Groth16Error::ProofVerificationFailed);
         }
 
-        // BSB22 Pedersen knowledge-proof check. For the
-        // single-commitment case the gnark fold collapses to
-        // identity (the G16-BSB22 challenge multiplies a 1-element
-        // MSM), so no Fiat-Shamir hash is needed and the check is a
-        // single 2-pair pairing equation:
-        //
-        //     e(commitment, gSigmaNeg) * e(pok, g) == 1
-        //
-        // Mirrors gnark-crypto pedersen.go:197-209 (the single-vk
-        // Verify form that BatchVerifyMultiVk collapses to when
-        // len(vk) == 1 && len(pok) == 1).
         #[cfg(feature = "bsb22")]
-        if let (Some(commitment), Some(pok), Some(g_sigma_neg), Some(g)) = (
+        self.verify_commitment_pok()?;
+
+        Ok(())
+    }
+
+    /// BSB22 Pedersen knowledge-proof check. For the
+    /// single-commitment case the gnark fold collapses to
+    /// identity (the G16-BSB22 challenge multiplies a 1-element
+    /// MSM), so no Fiat-Shamir hash is needed and the check is a
+    /// single 2-pair pairing equation:
+    ///
+    /// ```text
+    /// e(commitment, gSigmaNeg) * e(pok, g) == 1
+    /// ```
+    ///
+    /// Mirrors gnark-crypto pedersen.go:197-209 (the single-vk
+    /// Verify form that BatchVerifyMultiVk collapses to when
+    /// len(vk) == 1 && len(pok) == 1).
+    ///
+    /// Invariant: `proof_commitment`, `proof_commitment_pok`, and
+    /// `vk_commitment` are always all-Some (set together by
+    /// `new_with_commitment`, which requires the vk commitment key) or
+    /// all-None (from `new`, which rejects commitment-carrying vks).
+    /// The if-let form fails closed — skipping the check — rather than
+    /// panicking if that invariant were ever violated.
+    #[cfg(feature = "bsb22")]
+    fn verify_commitment_pok(&self) -> Result<(), Groth16Error> {
+        if let (Some(commitment), Some(pok), Some(commitment_key)) = (
             self.proof_commitment,
             self.proof_commitment_pok,
-            self.verifyingkey.vk_commitment_g_sigma_neg_g2.as_ref(),
-            self.verifyingkey.vk_commitment_g2.as_ref(),
+            self.verifyingkey.vk_commitment.as_ref(),
         ) {
             let mut pok_input = [0u8; 384];
             pok_input[0..64].copy_from_slice(commitment);
-            pok_input[64..192].copy_from_slice(g_sigma_neg);
+            pok_input[64..192].copy_from_slice(&commitment_key.g_sigma_neg_g2);
             pok_input[192..256].copy_from_slice(pok);
-            pok_input[256..384].copy_from_slice(g);
+            pok_input[256..384].copy_from_slice(&commitment_key.g2);
             let pok_res = pairing_be(&pok_input)
                 .map_err(|_| Groth16Error::CommitmentPokVerificationFailed)?;
             if pok_res[31] != 1 {
@@ -332,17 +329,13 @@ pub fn is_less_than_bn254_field_size_be(bytes: &[u8; 32]) -> bool {
 
 /// Negate a BN254 G1 point serialized as 64 uncompressed big-endian
 /// bytes (X || Y) and return the negated point in the same format.
+/// For (x, y) the negation is (x, p - y) where p is the BN254 base
+/// field (Fq) modulus.
 ///
 /// Useful for preparing `proof.A` for a Groth16 verifier that expects
 /// the LHS of the pairing equation to include `-A` (e.g. gnark emits
 /// the non-negated form; the on-chain verifier folds `e(α, β)` onto
 /// the LHS via the standard 4-pair check and therefore wants `-A`).
-/// Also used internally by [`crate::proof_parser::circom_prover::convert_proof`]
-/// via a slightly different interface that operates on an
-/// `ark_groth16::Proof` directly.
-/// Negate a BN254 G1 point serialized as 64 uncompressed big-endian
-/// bytes (X || Y). For (x, y) the negation is (x, p - y) where p is
-/// the BN254 base field (Fq) modulus.
 pub fn negate_g1_be(g1: &[u8; 64]) -> [u8; 64] {
     // Identity check: all zeros -> identity, negation is identity.
     if *g1 == [0u8; 64] {
@@ -375,16 +368,11 @@ pub fn negate_g1_be(g1: &[u8; 64]) -> [u8; 64] {
     // Compute p - y with borrow (big-endian: limb[0] is most significant).
     let mut borrow: u64 = 0;
     let mut neg_y = [0u64; 4];
-    let mut i = 3;
-    loop {
+    for i in (0..4).rev() {
         let (diff, b1) = FQ[i].overflowing_sub(y[i]);
         let (diff, b2) = diff.overflowing_sub(borrow);
         neg_y[i] = diff;
         borrow = (b1 as u64) + (b2 as u64);
-        if i == 0 {
-            break;
-        }
-        i -= 1;
     }
     result[32..40].copy_from_slice(&neg_y[0].to_be_bytes());
     result[40..48].copy_from_slice(&neg_y[1].to_be_bytes());
@@ -511,11 +499,8 @@ mod tests {
             ],
         ],
 
-        // Vanilla Groth16 vk; no BSB22 commitment key.
-        #[cfg(feature = "bsb22")]
-        vk_commitment_g2: None,
-        #[cfg(feature = "bsb22")]
-        vk_commitment_g_sigma_neg_g2: None,
+        // Standard Groth16 vk; no BSB22 commitment key.
+        vk_commitment: None,
     };
 
     fn change_endianness(bytes: &[u8]) -> Vec<u8> {
@@ -739,7 +724,7 @@ mod tests {
     // Setup call (the Go test prints them all together).
     //
     // The FFI test crate `tests/bsb22/` exercises the same path with
-    // freshly-generated bytes per run; this test exists so the vanilla
+    // freshly-generated bytes per run; this test exists so a plain
     // `cargo test -p groth16-solana --features bsb22` covers the BSB22
     // verifier without the Go toolchain dep.
     // -------------------------------------------------------------------
@@ -747,13 +732,16 @@ mod tests {
     #[cfg(feature = "bsb22")]
     mod bsb22_e2e {
         use super::*;
-        use crate::gnark_vk_parser::parse_gnark_vk_bytes;
+        use crate::vk::gnark::parse_gnark_vk_bytes;
 
         // Committed binary fixtures — shared with the SBF program at
         // tests/bsb22-program/build.rs. All seven files are one
         // consistent snapshot from a single gnark `Setup` + `Prove`
-        // for `Lookups1Circuit` with X=7. See
-        // tests/fixtures/bsb22/README.md for the regeneration recipe.
+        // for the variant-1 `LookupsCircuit` (one lookup) with X=7.
+        // Regenerate all seven together
+        // via `TestDumpFullFixture` in
+        // `tests/bsb22/gnark-fixture/main_test.go` (gnark setup is
+        // non-deterministic, so vk and proof must come from a single run).
         const VK_BYTES: &[u8] = include_bytes!("../tests/fixtures/bsb22/vk_variant_1.bin");
         const PROOF_A_BYTES: &[u8; 64] =
             include_bytes!("../tests/fixtures/bsb22/proof_a_variant_1.bin");
@@ -771,7 +759,7 @@ mod tests {
         fn bsb22_e2e_verifies() {
             let vk_owned = parse_gnark_vk_bytes(VK_BYTES).unwrap();
             assert_eq!(vk_owned.nr_pubinputs, 1);
-            assert!(vk_owned.vk_commitment_g2.is_some());
+            assert!(vk_owned.vk_commitment.is_some());
             let vk = vk_owned.as_borrowed();
 
             let proof_a = negate_g1_be(PROOF_A_BYTES);

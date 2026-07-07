@@ -24,15 +24,6 @@ fn main() {
         panic!("missing Go toolchain");
     }
 
-    // `go mod tidy` keeps the dep graph honest in case the fixture
-    // module's go.sum drifted from go.mod.
-    let status = Command::new("go")
-        .current_dir(&go_dir)
-        .args(["mod", "tidy"])
-        .status()
-        .expect("go mod tidy");
-    assert!(status.success(), "go mod tidy failed");
-
     // Build as C static archive. Go generates libgnark_fixture.h
     // alongside libgnark_fixture.a in OUT_DIR.
     let status = Command::new("go")

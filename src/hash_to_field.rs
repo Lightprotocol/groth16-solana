@@ -71,37 +71,29 @@ fn sha256(input: &[u8]) -> [u8; 32] {
     #[cfg(not(target_os = "solana"))]
     {
         use sha2::{Digest, Sha256};
-        let mut h = Sha256::new();
-        h.update(input);
-        h.finalize().into()
+        let mut hasher = Sha256::new();
+        hasher.update(input);
+        hasher.finalize().into()
     }
 }
 
-/// RFC 9380 `expand_message_xmd` with SHA-256.
+/// RFC 9380 `expand_message_xmd` with SHA-256, specialized to the one
+/// output length this crate needs (`L = 48`, so `ell = 2`).
 ///
 /// Mirrors `gnark-crypto/ecc/bn254/fr/element.go::Hash` (which calls
-/// `hash.ExpandMsgXmd(msg, dst, lenInBytes)`). Returns `Err` only if
-/// the inputs are out-of-spec or would overflow the stack scratch
-/// buffer: `dst` longer than 255 bytes, `len_in_bytes` requiring
-/// `ell > 255`, or the preimage for any hash call exceeding
-/// [`MAX_SCRATCH`].
-fn expand_message_xmd_sha256(
-    msg: &[u8],
-    dst: &[u8],
-    len_in_bytes: usize,
-) -> Result<[u8; L], Groth16Error> {
+/// `hash.ExpandMsgXmd(msg, dst, lenInBytes)`) for the single
+/// `lenInBytes == 48` case. This is **not** a general RFC 9380
+/// implementation — if another output length is ever required,
+/// re-generalize this function (restore the `len_in_bytes` parameter
+/// and the `ell` computation) rather than duplicating it.
+///
+/// Returns `Err` only if the inputs are out-of-spec or would overflow
+/// the stack scratch buffer: `dst` longer than 255 bytes, or the
+/// preimage for any hash call exceeding [`MAX_SCRATCH`].
+fn expand_message_xmd_sha256_l48(msg: &[u8], dst: &[u8]) -> Result<[u8; L], Groth16Error> {
     if dst.len() > 255 {
         return Err(Groth16Error::Bsb22HashToFieldFailed);
     }
-    let ell = (len_in_bytes + B_IN_BYTES - 1) / B_IN_BYTES;
-    if ell > 255 {
-        return Err(Groth16Error::Bsb22HashToFieldFailed);
-    }
-    // We only call this with len_in_bytes == L = 48, so ell == 2.
-    // The fixed-size output array makes the on-chain hot path
-    // allocation-free.
-    debug_assert_eq!(len_in_bytes, L);
-    debug_assert_eq!(ell, 2);
 
     // DST_prime = dst || I2OSP(len(dst), 1)
     // Stack-allocate up to the spec-permitted 255+1 bytes.
@@ -124,46 +116,46 @@ fn expand_message_xmd_sha256(
     // b_0 = H(z_pad || msg || l_i_b_str || 0x00 || DST_prime)
     //   z_pad     = R_IN_BYTES zero bytes
     //   l_i_b_str = I2OSP(len_in_bytes, 2) = [0x00, 0x30] for len=48
-    let l_i_b_str = (len_in_bytes as u16).to_be_bytes();
-    let mut w = 0;
+    const L_I_B_STR: [u8; 2] = (L as u16).to_be_bytes();
+    let mut offset = 0;
     // z_pad is already zero in the scratch buffer; just advance.
-    w += R_IN_BYTES;
-    scratch[w..w + msg.len()].copy_from_slice(msg);
-    w += msg.len();
-    scratch[w..w + 2].copy_from_slice(&l_i_b_str);
-    w += 2;
-    scratch[w] = 0x00;
-    w += 1;
-    scratch[w..w + dst_prime.len()].copy_from_slice(dst_prime);
-    w += dst_prime.len();
-    debug_assert_eq!(w, b0_len);
-    let b0 = sha256(&scratch[..w]);
+    offset += R_IN_BYTES;
+    scratch[offset..offset + msg.len()].copy_from_slice(msg);
+    offset += msg.len();
+    scratch[offset..offset + 2].copy_from_slice(&L_I_B_STR);
+    offset += 2;
+    scratch[offset] = 0x00;
+    offset += 1;
+    scratch[offset..offset + dst_prime.len()].copy_from_slice(dst_prime);
+    offset += dst_prime.len();
+    debug_assert_eq!(offset, b0_len);
+    let b0 = sha256(&scratch[..offset]);
 
     // b_1 = H(b_0 || I2OSP(1, 1) || DST_prime)
     let b1_len = B_IN_BYTES + 1 + dst_prime.len();
     // b1_len <= b0_len so no overflow possible, but stay defensive:
     debug_assert!(b1_len <= MAX_SCRATCH);
-    let mut w = 0;
-    scratch[w..w + B_IN_BYTES].copy_from_slice(&b0);
-    w += B_IN_BYTES;
-    scratch[w] = 0x01;
-    w += 1;
-    scratch[w..w + dst_prime.len()].copy_from_slice(dst_prime);
-    w += dst_prime.len();
-    debug_assert_eq!(w, b1_len);
-    let b1 = sha256(&scratch[..w]);
+    let mut offset = 0;
+    scratch[offset..offset + B_IN_BYTES].copy_from_slice(&b0);
+    offset += B_IN_BYTES;
+    scratch[offset] = 0x01;
+    offset += 1;
+    scratch[offset..offset + dst_prime.len()].copy_from_slice(dst_prime);
+    offset += dst_prime.len();
+    debug_assert_eq!(offset, b1_len);
+    let b1 = sha256(&scratch[..offset]);
 
     // b_2 = H((b_0 XOR b_1) || I2OSP(2, 1) || DST_prime)
-    let mut w = 0;
+    let mut offset = 0;
     for j in 0..B_IN_BYTES {
-        scratch[w + j] = b0[j] ^ b1[j];
+        scratch[offset + j] = b0[j] ^ b1[j];
     }
-    w += B_IN_BYTES;
-    scratch[w] = 0x02;
-    w += 1;
-    scratch[w..w + dst_prime.len()].copy_from_slice(dst_prime);
-    w += dst_prime.len();
-    let b2 = sha256(&scratch[..w]);
+    offset += B_IN_BYTES;
+    scratch[offset] = 0x02;
+    offset += 1;
+    scratch[offset..offset + dst_prime.len()].copy_from_slice(dst_prime);
+    offset += dst_prime.len();
+    let b2 = sha256(&scratch[..offset]);
 
     // uniform_bytes = (b_1 || b_2)[..L]
     let mut out = [0u8; L];
@@ -175,7 +167,7 @@ fn expand_message_xmd_sha256(
 /// Compute gnark's `fr.Hash(msg, dst, 1)` over BN254 Fr and return the
 /// resulting element as 32 big-endian bytes.
 pub fn hash_to_field_bn254_fr(msg: &[u8], dst: &[u8]) -> Result<[u8; 32], Groth16Error> {
-    let raw = expand_message_xmd_sha256(msg, dst, L)?;
+    let raw = expand_message_xmd_sha256_l48(msg, dst)?;
     let fr_elem = Fr::from_be_bytes_mod_order(&raw);
     let bi = fr_elem.into_bigint();
     let bytes = bi.to_bytes_be();

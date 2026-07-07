@@ -123,7 +123,8 @@ async function main() {
      x++;
      s += "\t\t],\n"
    }
-   s += "\t]\n};"
+   // snarkjs/circom verifying keys never carry a BSB22 commitment key.
+   s += "\t],\n\n\tvk_commitment: None,\n};"
 
    fs.writeSync(resFile,s)
  });

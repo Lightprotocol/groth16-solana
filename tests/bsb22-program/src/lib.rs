@@ -10,7 +10,7 @@
 //!   public_input [384..416)
 //!
 //! Total: 416 bytes. The verifying key is baked into `.rodata` via
-//! `build.rs` → `gnark_vk_parser::generate_bsb22_vk_file`.
+//! `build.rs` → `vk::gnark::generate_bsb22_vk_file`.
 
 use groth16_solana::groth16::Groth16Verifier;
 use solana_program::{
@@ -19,8 +19,8 @@ use solana_program::{
 };
 
 // Baked BSB22 verifying key, generated at build time by
-// groth16_solana::gnark_vk_parser::generate_bsb22_vk_file from the
-// hex-encoded variant 1 snapshot in build.rs.
+// groth16_solana::vk::gnark::generate_bsb22_vk_file from the
+// committed tests/fixtures/bsb22/vk_variant_1.bin snapshot (see build.rs).
 include!(concat!(env!("OUT_DIR"), "/verifying_key.rs"));
 
 pub const IX_LEN: usize = 64 + 128 + 64 + 64 + 64 + 32;

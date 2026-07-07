@@ -83,34 +83,6 @@ func runVariant(t *testing.T, v int) {
 	}
 }
 
-// TestDumpVkBytes prints the gnark vk.bin bytes for variant 1 in hex
-// so we can bake them into the Rust gnark_vk_parser unit test as a
-// golden fixture.
-func TestDumpVkBytes(t *testing.T) {
-	circuit, err := newCircuit(1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, circuit)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, vk, err := groth16.Setup(cs)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
-	if err := writeVerifyingKey(vk, dir+"/vk.bin"); err != nil {
-		t.Fatal(err)
-	}
-	bytes, err := os.ReadFile(dir + "/vk.bin")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("vk.bin (variant 1) length=%d", len(bytes))
-	t.Logf("vk.bin hex: %x", bytes)
-}
-
 // castProofForFixture extracts (Ar, Bs, Krs, Commitments[0],
 // CommitmentPok) raw bytes from a *groth16.Proof. Mirrors what
 // main.go's Prove cgo entry does, but returns Go []byte slices for

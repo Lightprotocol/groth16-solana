@@ -69,14 +69,18 @@ import (
 // Circuits
 // =============================================================================
 
-// LookupsNCircuit is the shared circuit shape for all three variants:
+// LookupsCircuit is a single parameterized circuit shape shared by all
+// three variants. The variant is the field `nbLookups` (number of
+// lookup queries); gnark's schema walker ignores non-Variable fields,
+// so `nbLookups` is baked into the circuit at Compile time without
+// becoming a witness:
 //
 //   - 1 user public input (X)
 //   - 1 private witness (Y)
 //   - 1 R1CS constraint (X*X == Y) so the circuit isn't degenerate
 //   - A 64-entry logderivlookup table of squares (entry[i] = i*i)
-//   - N independent lookups, each at index Y+k for k in 0..N-1, each
-//     bound by AssertIsEqual(result, (Y+k) * (Y+k))
+//   - nbLookups independent lookups, each at index Y+k for k in
+//     0..nbLookups-1, each bound by AssertIsEqual(result, (Y+k) * (Y+k))
 //
 // All three variants share the same public-input shape, so the same
 // witness assignment (X = 7, Y = 49) works across them. With X = 7 the
@@ -89,84 +93,56 @@ import (
 
 const lookupTableSize = 64
 
-func defineLookups(api frontend.API, X, Y frontend.Variable, n int) error {
+func defineLookups(api frontend.API, X, Y frontend.Variable, nbLookups int) error {
 	// Trivial constraint so the circuit is non-degenerate.
 	api.AssertIsEqual(api.Mul(X, X), Y)
 
 	// 64-entry table of squares: 0, 1, 4, 9, ..., 3969.
-	t := logderivlookup.New(api)
+	table := logderivlookup.New(api)
 	for i := 0; i < lookupTableSize; i++ {
-		t.Insert(i * i)
+		table.Insert(i * i)
 	}
 
-	// N independent lookups at indices Y, Y+1, ..., Y+(N-1). Each
-	// result is asserted to equal idx*idx, which both keeps the
-	// result wire allocated (so the optimizer doesn't drop it) and
-	// gives the witness solver a unique value to assign.
-	for k := 0; k < n; k++ {
+	// nbLookups independent lookups at indices Y, Y+1, ...,
+	// Y+(nbLookups-1). Each result is asserted to equal idx*idx,
+	// which both keeps the result wire allocated (so the optimizer
+	// doesn't drop it) and gives the witness solver a unique value
+	// to assign.
+	for k := 0; k < nbLookups; k++ {
 		var idx frontend.Variable
 		if k == 0 {
 			idx = Y
 		} else {
 			idx = api.Add(Y, k)
 		}
-		results := t.Lookup(idx)
+		results := table.Lookup(idx)
 		api.AssertIsEqual(results[0], api.Mul(idx, idx))
 	}
 	return nil
 }
 
-type Lookups1Circuit struct {
-	X frontend.Variable `gnark:",public"`
-	Y frontend.Variable
+type LookupsCircuit struct {
+	nbLookups int               // number of lookup queries; not a witness field (gnark ignores non-Variable fields)
+	X         frontend.Variable `gnark:",public"`
+	Y         frontend.Variable
 }
 
-func (c *Lookups1Circuit) Define(api frontend.API) error {
-	return defineLookups(api, c.X, c.Y, 1)
-}
-
-type Lookups2Circuit struct {
-	X frontend.Variable `gnark:",public"`
-	Y frontend.Variable
-}
-
-func (c *Lookups2Circuit) Define(api frontend.API) error {
-	return defineLookups(api, c.X, c.Y, 2)
-}
-
-type Lookups3Circuit struct {
-	X frontend.Variable `gnark:",public"`
-	Y frontend.Variable
-}
-
-func (c *Lookups3Circuit) Define(api frontend.API) error {
-	return defineLookups(api, c.X, c.Y, 3)
+func (c *LookupsCircuit) Define(api frontend.API) error {
+	return defineLookups(api, c.X, c.Y, c.nbLookups)
 }
 
 func newCircuit(variant int) (frontend.Circuit, error) {
-	switch variant {
-	case 1:
-		return &Lookups1Circuit{}, nil
-	case 2:
-		return &Lookups2Circuit{}, nil
-	case 3:
-		return &Lookups3Circuit{}, nil
-	default:
+	if variant < 1 || variant > 3 {
 		return nil, fmt.Errorf("unknown variant %d (must be 1, 2, or 3)", variant)
 	}
+	return &LookupsCircuit{nbLookups: variant}, nil
 }
 
 func newAssignment(variant int, x, y *big.Int) (frontend.Circuit, error) {
-	switch variant {
-	case 1:
-		return &Lookups1Circuit{X: x, Y: y}, nil
-	case 2:
-		return &Lookups2Circuit{X: x, Y: y}, nil
-	case 3:
-		return &Lookups3Circuit{X: x, Y: y}, nil
-	default:
+	if variant < 1 || variant > 3 {
 		return nil, fmt.Errorf("unknown variant %d (must be 1, 2, or 3)", variant)
 	}
+	return &LookupsCircuit{nbLookups: variant, X: x, Y: y}, nil
 }
 
 // =============================================================================

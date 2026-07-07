@@ -29,8 +29,8 @@ mod bind {
 mod tests {
     use super::bind;
     use groth16_solana::errors::Groth16Error;
-    use groth16_solana::gnark_vk_parser::parse_gnark_vk_bytes;
-    use groth16_solana::groth16::{negate_g1_be, Groth16Verifier};
+    use groth16_solana::vk::gnark::parse_gnark_vk_bytes;
+    use groth16_solana::groth16::{negate_g1_be, Groth16Verifier, Groth16Verifyingkey};
     use std::ffi::{CStr, CString};
     use std::os::raw::{c_char, c_int};
     use std::path::Path;
@@ -158,42 +158,61 @@ mod tests {
         (dir, fixture)
     }
 
+    /// Proof material extracted from a [`VariantFixture`], ready for
+    /// the in-repo verifier. Negative tests mutate one field and then
+    /// assert on [`ProofFields::verify`].
+    struct ProofFields {
+        proof_a: [u8; 64], // already negated for the on-chain 4-pair check
+        proof_b: [u8; 128],
+        proof_c: [u8; 64],
+        commitment: [u8; 64],
+        pok: [u8; 64],
+        public_input: [u8; 32],
+    }
+
+    impl ProofFields {
+        fn from_fixture(fixture: &VariantFixture) -> Self {
+            // gnark emits proof.Ar in its non-negated form; the
+            // on-chain verifier runs the standard 4-pair Groth16 check
+            // which folds e(alpha, beta) onto the LHS, so it expects
+            // -Ar. Mirror the negation the standard-Groth16 groth16-solana test
+            // does, via the `negate_g1_be` public helper.
+            Self {
+                proof_a: negate_g1_be(&fixture.proof.proof_a()),
+                proof_b: fixture.proof.proof_b(),
+                proof_c: fixture.proof.proof_c(),
+                commitment: fixture.proof.commitment(),
+                pok: fixture.proof.commitment_pok(),
+                public_input: fixture.proof.public_input(),
+            }
+        }
+
+        fn verify(&self, vk: &Groth16Verifyingkey) -> Result<(), Groth16Error> {
+            let public_inputs: [[u8; 32]; 1] = [self.public_input];
+            let mut verifier = Groth16Verifier::new_with_commitment(
+                &self.proof_a,
+                &self.proof_b,
+                &self.proof_c,
+                &self.commitment,
+                &self.pok,
+                &public_inputs,
+                vk,
+            )
+            .expect("new_with_commitment");
+            verifier.verify()
+        }
+    }
+
     fn assert_verifies(variant: c_int) {
-        let (_dir, fix) = setup_variant(variant);
-        let vk = parse_gnark_vk_bytes(&fix.vk_bytes).expect("parse vk");
+        let (_dir, fixture) = setup_variant(variant);
+        let vk = parse_gnark_vk_bytes(&fixture.vk_bytes).expect("parse vk");
         assert!(
-            vk.vk_commitment_g2.is_some(),
+            vk.vk_commitment.is_some(),
             "variant {} should be BSB22",
             variant
         );
-        let borrowed = vk.as_borrowed();
-
-        let proof_a = fix.proof.proof_a();
-        let proof_b = fix.proof.proof_b();
-        let proof_c = fix.proof.proof_c();
-        let commitment = fix.proof.commitment();
-        let pok = fix.proof.commitment_pok();
-        let public_input = fix.proof.public_input();
-        let public_inputs: [[u8; 32]; 1] = [public_input];
-
-        // gnark emits proof.Ar in its non-negated form; the
-        // on-chain verifier runs the standard 4-pair Groth16 check
-        // which folds e(alpha, beta) onto the LHS, so it expects
-        // -Ar. Mirror the negation the vanilla groth16-solana test
-        // does, via the `negate_g1_be` public helper.
-        let proof_a_neg = negate_g1_be(&proof_a);
-
-        let mut verifier = Groth16Verifier::new_with_commitment(
-            &proof_a_neg,
-            &proof_b,
-            &proof_c,
-            &commitment,
-            &pok,
-            &public_inputs,
-            &borrowed,
-        )
-        .expect("new_with_commitment");
-        verifier.verify().expect("verify");
+        let fields = ProofFields::from_fixture(&fixture);
+        fields.verify(&vk.as_borrowed()).expect("verify");
     }
 
     #[test]
@@ -213,61 +232,27 @@ mod tests {
 
     #[test]
     fn variant_1_rejects_mutated_public_input() {
-        let (_dir, fix) = setup_variant(1);
-        let vk = parse_gnark_vk_bytes(&fix.vk_bytes).expect("parse vk");
-        let borrowed = vk.as_borrowed();
+        let (_dir, fixture) = setup_variant(1);
+        let vk = parse_gnark_vk_bytes(&fixture.vk_bytes).expect("parse vk");
+        let mut fields = ProofFields::from_fixture(&fixture);
 
-        let proof_a = negate_g1_be(&fix.proof.proof_a());
-        let proof_b = fix.proof.proof_b();
-        let proof_c = fix.proof.proof_c();
-        let commitment = fix.proof.commitment();
-        let pok = fix.proof.commitment_pok();
-        let mut public_input = fix.proof.public_input();
-        public_input[31] ^= 1; // flip a bit
-        let public_inputs: [[u8; 32]; 1] = [public_input];
+        fields.public_input[31] ^= 1; // flip a bit
 
-        let mut verifier = Groth16Verifier::new_with_commitment(
-            &proof_a,
-            &proof_b,
-            &proof_c,
-            &commitment,
-            &pok,
-            &public_inputs,
-            &borrowed,
-        )
-        .expect("new_with_commitment");
         assert_eq!(
-            verifier.verify(),
+            fields.verify(&vk.as_borrowed()),
             Err(Groth16Error::ProofVerificationFailed)
         );
     }
 
     #[test]
     fn variant_2_rejects_mutated_commitment() {
-        let (_dir, fix) = setup_variant(2);
-        let vk = parse_gnark_vk_bytes(&fix.vk_bytes).expect("parse vk");
-        let borrowed = vk.as_borrowed();
+        let (_dir, fixture) = setup_variant(2);
+        let vk = parse_gnark_vk_bytes(&fixture.vk_bytes).expect("parse vk");
+        let mut fields = ProofFields::from_fixture(&fixture);
 
-        let proof_a = negate_g1_be(&fix.proof.proof_a());
-        let proof_b = fix.proof.proof_b();
-        let proof_c = fix.proof.proof_c();
-        let mut commitment = fix.proof.commitment();
-        commitment[0] ^= 1; // flip a bit -> Pedersen PoK fails
-        let pok = fix.proof.commitment_pok();
-        let public_input = fix.proof.public_input();
-        let public_inputs: [[u8; 32]; 1] = [public_input];
+        fields.commitment[0] ^= 1; // flip a bit -> Pedersen PoK fails
 
-        let mut verifier = Groth16Verifier::new_with_commitment(
-            &proof_a,
-            &proof_b,
-            &proof_c,
-            &commitment,
-            &pok,
-            &public_inputs,
-            &borrowed,
-        )
-        .expect("new_with_commitment");
-        let err = verifier.verify().unwrap_err();
+        let err = fields.verify(&vk.as_borrowed()).unwrap_err();
         // Bit-flipping the first byte of an uncompressed G1 BE point
         // either lands on an off-curve point (the syscall rejects with
         // PreparingInputsG1AdditionFailed when adding the commitment to
@@ -289,30 +274,13 @@ mod tests {
 
     #[test]
     fn variant_3_rejects_mutated_pok() {
-        let (_dir, fix) = setup_variant(3);
-        let vk = parse_gnark_vk_bytes(&fix.vk_bytes).expect("parse vk");
-        let borrowed = vk.as_borrowed();
+        let (_dir, fixture) = setup_variant(3);
+        let vk = parse_gnark_vk_bytes(&fixture.vk_bytes).expect("parse vk");
+        let mut fields = ProofFields::from_fixture(&fixture);
 
-        let proof_a = negate_g1_be(&fix.proof.proof_a());
-        let proof_b = fix.proof.proof_b();
-        let proof_c = fix.proof.proof_c();
-        let commitment = fix.proof.commitment();
-        let mut pok = fix.proof.commitment_pok();
-        pok[0] ^= 1;
-        let public_input = fix.proof.public_input();
-        let public_inputs: [[u8; 32]; 1] = [public_input];
+        fields.pok[0] ^= 1;
 
-        let mut verifier = Groth16Verifier::new_with_commitment(
-            &proof_a,
-            &proof_b,
-            &proof_c,
-            &commitment,
-            &pok,
-            &public_inputs,
-            &borrowed,
-        )
-        .expect("new_with_commitment");
-        let err = verifier.verify().unwrap_err();
+        let err = fields.verify(&vk.as_borrowed()).unwrap_err();
         assert_eq!(err, Groth16Error::CommitmentPokVerificationFailed);
     }
 }
