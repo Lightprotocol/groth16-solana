@@ -7,7 +7,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use groth16_solana::vk_parser::generate_vk_file;
+//! use groth16_solana::vk::circom::generate_vk_file;
 //!
 //! fn main() {
 //!     generate_vk_file(
@@ -18,6 +18,11 @@
 //! }
 //! ```
 
+extern crate std;
+
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
 use num_bigint::BigUint;
 use serde::Deserialize;
 use std::fs;
@@ -77,6 +82,24 @@ fn process_g1_component(component: &str) -> Result<Vec<u8>, VkParseError> {
     bigint_string_to_be_bytes(component, 32)
 }
 
+/// snarkjs stores points in projective form with a trailing z
+/// component ("1" for G1, ["1", "0"] for G2); the generated const only
+/// needs the affine part. Drops the trailing component, returning a
+/// meaningful error (instead of an integer-underflow panic) when the
+/// JSON field is an empty array.
+fn affine_components<'a, T>(point: &'a [T], field_name: &str) -> Result<&'a [T], VkParseError> {
+    point
+        .split_last()
+        .map(|(_z, affine)| affine)
+        .ok_or_else(|| {
+            VkParseError::InvalidData(format!(
+                "{} is empty; expected projective point coordinates \
+                 (affine components plus a trailing z component)",
+                field_name
+            ))
+        })
+}
+
 /// Process G2 point: concatenate two 32-byte LE components, reverse the full 64 bytes, then split
 fn process_g2_component(components: &[String]) -> Result<(Vec<u8>, Vec<u8>), VkParseError> {
     if components.len() != 2 {
@@ -129,18 +152,24 @@ pub fn parse_vk_json_to_rust_string(json_content: &str) -> Result<String, VkPars
 
     let mut output = String::new();
 
-    // Header
+    // Header. `IC` has one entry per public input plus the constant
+    // K[0] term, so it must never be empty.
+    let nr_pubinputs = raw_vk.ic.len().checked_sub(1).ok_or_else(|| {
+        VkParseError::InvalidData(String::from(
+            "IC is empty; expected at least the constant K[0] term",
+        ))
+    })?;
     output.push_str("use groth16_solana::groth16::Groth16Verifyingkey;\n\n");
     output.push_str(&format!(
         "pub const VERIFYINGKEY: Groth16Verifyingkey = Groth16Verifyingkey {{\n\tnr_pubinputs: {},\n\n",
-        raw_vk.ic.len() - 1
+        nr_pubinputs
     ));
 
     // Process vk_alpha_g1 - flat [u8; 64]
     output.push_str("\tvk_alpha_g1: [");
     let mut alpha_bytes = Vec::new();
-    for i in 0..raw_vk.vk_alpha_1.len() - 1 {
-        let bytes = process_g1_component(&raw_vk.vk_alpha_1[i])?;
+    for component in affine_components(&raw_vk.vk_alpha_1, "vk_alpha_1")? {
+        let bytes = process_g1_component(component)?;
         alpha_bytes.extend_from_slice(&bytes);
     }
     output.push_str(
@@ -155,8 +184,8 @@ pub fn parse_vk_json_to_rust_string(json_content: &str) -> Result<String, VkPars
     // Process vk_beta_g2 - flat [u8; 128]
     output.push_str("\tvk_beta_g2: [");
     let mut beta_bytes = Vec::new();
-    for i in 0..raw_vk.vk_beta_2.len() - 1 {
-        let (part0, part1) = process_g2_component(&raw_vk.vk_beta_2[i])?;
+    for pair in affine_components(&raw_vk.vk_beta_2, "vk_beta_2")? {
+        let (part0, part1) = process_g2_component(pair)?;
         beta_bytes.extend_from_slice(&part0);
         beta_bytes.extend_from_slice(&part1);
     }
@@ -172,8 +201,8 @@ pub fn parse_vk_json_to_rust_string(json_content: &str) -> Result<String, VkPars
     // Process vk_gamma_g2 - flat [u8; 128]
     output.push_str("\tvk_gamma_g2: [");
     let mut gamma_bytes = Vec::new();
-    for i in 0..raw_vk.vk_gamma_2.len() - 1 {
-        let (part0, part1) = process_g2_component(&raw_vk.vk_gamma_2[i])?;
+    for pair in affine_components(&raw_vk.vk_gamma_2, "vk_gamma_2")? {
+        let (part0, part1) = process_g2_component(pair)?;
         gamma_bytes.extend_from_slice(&part0);
         gamma_bytes.extend_from_slice(&part1);
     }
@@ -189,8 +218,8 @@ pub fn parse_vk_json_to_rust_string(json_content: &str) -> Result<String, VkPars
     // Process vk_delta_g2 - flat [u8; 128]
     output.push_str("\tvk_delta_g2: [");
     let mut delta_bytes = Vec::new();
-    for i in 0..raw_vk.vk_delta_2.len() - 1 {
-        let (part0, part1) = process_g2_component(&raw_vk.vk_delta_2[i])?;
+    for pair in affine_components(&raw_vk.vk_delta_2, "vk_delta_2")? {
+        let (part0, part1) = process_g2_component(pair)?;
         delta_bytes.extend_from_slice(&part0);
         delta_bytes.extend_from_slice(&part1);
     }
@@ -205,11 +234,11 @@ pub fn parse_vk_json_to_rust_string(json_content: &str) -> Result<String, VkPars
 
     // Process vk_ic - &[[u8; 64]]
     output.push_str("\tvk_ic: &[\n");
-    for point in &raw_vk.ic {
+    for (point_index, point) in raw_vk.ic.iter().enumerate() {
         output.push_str("\t\t[");
         let mut point_bytes = Vec::new();
-        for i in 0..point.len() - 1 {
-            let bytes = process_g1_component(&point[i])?;
+        for component in affine_components(point, &format!("IC[{}]", point_index))? {
+            let bytes = process_g1_component(component)?;
             point_bytes.extend_from_slice(&bytes);
         }
         output.push_str(
@@ -221,7 +250,10 @@ pub fn parse_vk_json_to_rust_string(json_content: &str) -> Result<String, VkPars
         );
         output.push_str("],\n");
     }
-    output.push_str("\t]\n");
+    output.push_str("\t],\n\n");
+
+    // snarkjs/circom verifying keys have no BSB22 commitment key.
+    output.push_str("\tvk_commitment: None,\n");
 
     output.push_str("};\n");
 
@@ -243,7 +275,7 @@ pub fn parse_vk_json_to_rust_string(json_content: &str) -> Result<String, VkPars
 ///
 /// ```rust,ignore
 /// // In build.rs
-/// use groth16_solana::vk_parser::generate_vk_file;
+/// use groth16_solana::vk::circom::generate_vk_file;
 ///
 /// fn main() {
 ///     generate_vk_file(

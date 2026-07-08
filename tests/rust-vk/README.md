@@ -50,7 +50,7 @@ The `build.rs` script does two things:
 
 1. **Generates Verification Key Rust Code**:
    - Reads `build/verification_key.json`
-   - Uses `groth16_solana::vk_parser::generate_vk_file()` to convert it to Rust
+   - Uses `groth16_solana::vk::circom::generate_vk_file()` to convert it to Rust
    - Outputs `src/verifying_key.rs` containing the `VERIFYINGKEY` constant
 
 2. **Transpiles Witness Generator**:

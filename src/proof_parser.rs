@@ -21,10 +21,13 @@
 
 #[cfg(feature = "circom")]
 pub mod circom_prover {
+    extern crate alloc;
     use crate::errors::Groth16Error;
+    use alloc::vec;
+    use alloc::vec::Vec;
     use ark_serialize::{CanonicalSerialize, Compress};
+    use core::ops::Neg;
     use solana_bn254::compression::prelude::convert_endianness;
-    use std::ops::Neg;
 
     /// Convert circom-prover proof to groth16-solana format
     ///
@@ -124,18 +127,20 @@ pub mod circom_prover {
         proof_b: &[u8; 128],
         proof_c: &[u8; 64],
     ) -> Result<([u8; 32], [u8; 64], [u8; 32]), Groth16Error> {
-        use solana_bn254::compression::prelude::{alt_bn128_g1_compress, alt_bn128_g2_compress};
+        use solana_bn254::compression::prelude::{
+            alt_bn128_g1_compress_be, alt_bn128_g2_compress_be,
+        };
 
         // Compress G1 points using solana_bn254
         let compressed_a =
-            alt_bn128_g1_compress(proof_a).map_err(|_| Groth16Error::ProofConversionError)?;
+            alt_bn128_g1_compress_be(proof_a).map_err(|_| Groth16Error::ProofConversionError)?;
 
         let compressed_c =
-            alt_bn128_g1_compress(proof_c).map_err(|_| Groth16Error::ProofConversionError)?;
+            alt_bn128_g1_compress_be(proof_c).map_err(|_| Groth16Error::ProofConversionError)?;
 
         // Compress G2 point using solana_bn254
         let compressed_b =
-            alt_bn128_g2_compress(proof_b).map_err(|_| Groth16Error::ProofConversionError)?;
+            alt_bn128_g2_compress_be(proof_b).map_err(|_| Groth16Error::ProofConversionError)?;
 
         Ok((compressed_a, compressed_b, compressed_c))
     }

@@ -1,16 +1,12 @@
 use crate::errors::Groth16Error;
-use solana_bn254::compression::prelude::{alt_bn128_g1_decompress, alt_bn128_g2_decompress};
+use crate::syscalls;
 
 pub fn decompress_g1(g1_bytes: &[u8; 32]) -> Result<[u8; 64], Groth16Error> {
-    let decompressed_g1 = alt_bn128_g1_decompress(g1_bytes)
-        .map_err(|_| crate::errors::Groth16Error::DecompressingG1Failed {})?;
-    Ok(decompressed_g1)
+    syscalls::g1_decompress_be(g1_bytes)
 }
 
 pub fn decompress_g2(g2_bytes: &[u8; 64]) -> Result<[u8; 128], Groth16Error> {
-    let decompressed_g2 = alt_bn128_g2_decompress(g2_bytes)
-        .map_err(|_| crate::errors::Groth16Error::DecompressingG2Failed {})?;
-    Ok(decompressed_g2)
+    syscalls::g2_decompress_be(g2_bytes)
 }
 
 #[cfg(test)]

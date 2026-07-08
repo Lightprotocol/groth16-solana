@@ -1,6 +1,19 @@
 [workspace]
-members = [".", "tests/rust-vk"]
+members = [".", "tests/rust-vk", "tests/bsb22", "tests/bsb22-program"]
 resolver = "2"
+
+# Pin transitive deps that would otherwise require edition2024 and
+# break `cargo build-sbf` (solana-cargo-build-sbf 3.0.0 ships
+# rustc 1.84). The exact deps to pin follow from the error messages
+# `cargo build-sbf` prints; at the time of writing they were blake3
+# (via constant_time_eq) and borsh-derive (via
+# proc-macro-crate → toml_edit).
+[workspace.dependencies]
+blake3 = "=1.8.2"
+
+[lints.rust.unexpected_cfgs]
+level = "warn"
+check-cfg = ['cfg(target_os, values("solana"))']
 
 [package]
 name = "groth16-solana"
@@ -11,17 +24,27 @@ repository = "https://github.com/Lightprotocol/groth16-solana"
 license = "MIT"
 
 [dependencies]
-solana-bn254 = "2"
-thiserror = "1.0"
-ark-serialize = "0.5"
-ark-ec = "0.5"
-ark-ff = "0.5"
-ark-bn254 = "0.5"
-num-bigint = "0.4.6"
-serde = { version = "1.0.195", optional = true, features = ["derive"] }
-serde_json = { version = "1.0.111", optional = true }
+thiserror = { version = "2", default-features = false }
+ark-ff = { version = "0.5", default-features = false }
+ark-bn254 = { version = "0.5", default-features = false, features = ["curve"] }
+num-bigint = { version = "0.4.6", default-features = false, optional = true }
+serde = { version = "1.0.195", optional = true, default-features = false, features = ["derive", "alloc"] }
+serde_json = { version = "1.0.111", optional = true, default-features = false, features = ["alloc"] }
 circom-prover = { version = "0.1", optional = true }
 ark-groth16 = { version = "0.5", optional = true }
+
+[target.'cfg(target_os = "solana")'.dependencies]
+pinocchio = "0.10"
+
+[target.'cfg(not(target_os = "solana"))'.dependencies]
+solana-bn254 = "3"
+ark-serialize = { version = "0.5", default-features = false }
+ark-ec = { version = "0.5", default-features = false }
+# Pure-Rust SHA-256 for the host build only; on the Solana SBF target
+# hash-to-field uses the `sol_sha256` syscall, so `sha2` is not needed
+# there (see src/hash_to_field.rs). The `bsb22` feature activates this
+# optional dep; that activation is simply a no-op on the solana target.
+sha2 = { version = "0.10", default-features = false, optional = true }
 
 
 [dev-dependencies]
@@ -31,5 +54,6 @@ serde = "1.0.195"
 serde_json = "1.0.111"
 
 [features]
-vk = ["serde", "serde_json"]
+vk = ["serde", "serde_json", "dep:num-bigint"]
 circom = ["circom-prover", "ark-groth16"]
+bsb22 = ["sha2"]
