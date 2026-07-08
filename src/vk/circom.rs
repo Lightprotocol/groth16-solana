@@ -252,7 +252,7 @@ pub fn parse_vk_json_to_rust_string(json_content: &str) -> Result<String, VkPars
     }
     output.push_str("\t],\n\n");
 
-    // snarkjs/circom verifying keys never carry a BSB22 commitment key.
+    // snarkjs/circom verifying keys have no BSB22 commitment key.
     output.push_str("\tvk_commitment: None,\n");
 
     output.push_str("};\n");

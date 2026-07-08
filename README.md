@@ -53,7 +53,7 @@ In this repo:
 
 ## BSB22 commitments (gnark `logderivlookup` / `api.Commit`)
 
-Enable the `bsb22` feature to verify gnark Groth16 proofs that carry a single
+Enable the `bsb22` feature to verify gnark Groth16 proofs that include a single
 BSB22 (Bowe-Sankaranarayanan-Bonneau 2022) Pedersen commitment. This is the
 shape every gnark circuit ends up with as soon as it touches
 `std/lookup/logderivlookup` or any emulated-field range-check helper, because
@@ -74,8 +74,8 @@ The `bsb22` feature adds:
 - A `vk_commitment: Option<CommitmentVerifyingKey>` field on
   `Groth16Verifyingkey` holding the Pedersen commitment key (`g2`,
   `g_sigma_neg_g2`). The field itself is not feature-gated; the
-  standard constructor `new` rejects vks where it is set, so existing
-  callers cannot accidentally feed a BSB22 vk through the wrong path.
+  standard constructor `new` rejects vks where it is set with
+  `Groth16Error::UnexpectedCommitmentKey`.
 - Internal hash-to-field (RFC 9380 `expand_message_xmd` over SHA-256)
   used to derive the commitment challenge, byte-exact with
   gnark-crypto's `ecc/bn254/fr/element.go::Hash` and validated against
@@ -88,11 +88,11 @@ The `bsb22` feature adds:
   (rare; typical when a circuit calls raw `api.Commit` more than once)
   are rejected with `Groth16Error::Bsb22UnsupportedMultiCommitment`.
 
-**Empirical on-chain cost: ~212k CU (approximate)** per BSB22 verify,
-measured end to end with `solana-bn254` v3, the `sol_sha256` syscall for
-hash-to-field, and stack-allocated `expand_message_xmd` buffers
-(zero heap allocations on the hot path). The source of truth for this
-figure is `tests/bsb22-program/tests/litesvm_cu.rs`. Re-measure via:
+**Cost on Solana: ~212k CU** per BSB22 verify, measured end to end with
+`solana-bn254` v3, the `sol_sha256` syscall for hash-to-field, and
+stack-allocated `expand_message_xmd` buffers (no heap allocations on the
+hot path). The source of truth for this figure is
+`tests/bsb22-program/tests/litesvm_cu.rs`. Re-measure via:
 
 ```sh
 cargo build-sbf --manifest-path tests/bsb22-program/Cargo.toml

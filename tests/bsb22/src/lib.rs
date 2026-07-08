@@ -254,18 +254,17 @@ mod tests {
 
         let err = fields.verify(&vk.as_borrowed()).unwrap_err();
         // Bit-flipping the first byte of an uncompressed G1 BE point
-        // either lands on an off-curve point (the syscall rejects with
-        // PreparingInputsG1AdditionFailed when adding the commitment to
-        // kSum) or — much rarer — yields a valid point that fails the
-        // Pedersen PoK pairing or the main Groth16 pairing. All three
-        // are valid rejections.
+        // almost always lands on an off-curve point, rejected as
+        // Bsb22InvalidCommitmentPoint when adding the commitment to
+        // kSum. Much rarer: the flip yields a valid point that then
+        // fails the main Groth16 pairing or the Pedersen PoK pairing.
+        // All three are valid rejections.
         assert!(
             matches!(
                 err,
-                Groth16Error::CommitmentPokVerificationFailed
+                Groth16Error::Bsb22InvalidCommitmentPoint
                     | Groth16Error::ProofVerificationFailed
-                    | Groth16Error::PreparingInputsG1AdditionFailed
-                    | Groth16Error::PreparingInputsG1MulFailed
+                    | Groth16Error::CommitmentPokVerificationFailed
             ),
             "unexpected err: {:?}",
             err

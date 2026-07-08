@@ -101,9 +101,8 @@ fn g1_add(point: &[u8; 64], acc: &[u8; 64]) -> Result<[u8; 64], Groth16Error> {
 
 impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
     /// Constructor for standard Groth16 proofs (no BSB22 commitment).
-    /// This rejects verifying keys that carry a commitment key —
-    /// those proofs must use
-    /// [`Groth16Verifier::new_with_commitment`] instead.
+    /// Rejects verifying keys that contain a commitment key; those
+    /// proofs must use [`Groth16Verifier::new_with_commitment`].
     pub fn new<'a>(
         proof_a: &'a [u8; 64],
         proof_b: &'a [u8; 128],
@@ -111,16 +110,17 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
         public_inputs: &'a [[u8; 32]; NR_INPUTS],
         verifyingkey: &'a Groth16Verifyingkey<'a>,
     ) -> Result<Groth16Verifier<'a, NR_INPUTS>, Groth16Error> {
-        if public_inputs.len() + 1 != verifyingkey.vk_ic.len() {
-            return Err(Groth16Error::InvalidPublicInputsLength);
+        // A vk with a Pedersen commitment key is a BSB22 vk and must
+        // be paired with `new_with_commitment`. Checked before the
+        // length check: a BSB22 vk has one extra vk_ic entry, so a
+        // correctly sized call would otherwise fail with
+        // InvalidPublicInputsLength and hide the real problem.
+        if verifyingkey.vk_commitment.is_some() {
+            return Err(Groth16Error::UnexpectedCommitmentKey);
         }
 
-        // This constructor only accepts commitment-free verifying
-        // keys: a vk that carries a Pedersen commitment key is
-        // implicitly a BSB22 vk and must be paired with
-        // `new_with_commitment`.
-        if verifyingkey.vk_commitment.is_some() {
-            return Err(Groth16Error::IncompatibleVerifyingKeyWithNrPublicInputs);
+        if public_inputs.len() + 1 != verifyingkey.vk_ic.len() {
+            return Err(Groth16Error::InvalidPublicInputsLength);
         }
 
         Ok(Groth16Verifier {
@@ -137,14 +137,13 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
         })
     }
 
-    /// Constructor for BSB22 Groth16 proofs that carry one Pedersen
+    /// Constructor for BSB22 Groth16 proofs with one Pedersen
     /// commitment plus its knowledge proof. The verifying key must
     /// have its `vk_commitment` set, and `vk_ic.len()` must equal
-    /// `public_inputs.len() + 2`
-    /// (the trailing `vk_ic` slot is the K column gnark appends for
-    /// the commitment-derived hash wire). Multi-commitment circuits
-    /// (more than one commitment per proof) are NOT supported — use
-    /// the vk parser, which rejects them at parse time with
+    /// `public_inputs.len() + 2` (the trailing `vk_ic` slot is the K
+    /// column gnark appends for the commitment-derived hash wire).
+    /// Multi-commitment circuits are not supported; the vk parser
+    /// rejects them at parse time with
     /// [`Groth16Error::Bsb22UnsupportedMultiCommitment`].
     #[cfg(feature = "bsb22")]
     pub fn new_with_commitment<'a>(
@@ -156,14 +155,17 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
         public_inputs: &'a [[u8; 32]; NR_INPUTS],
         verifyingkey: &'a Groth16Verifyingkey<'a>,
     ) -> Result<Groth16Verifier<'a, NR_INPUTS>, Groth16Error> {
+        // Checked before the length check: a standard-Groth16 vk fed
+        // through this constructor should report MissingCommitmentKey,
+        // not InvalidPublicInputsLength.
+        if verifyingkey.vk_commitment.is_none() {
+            return Err(Groth16Error::MissingCommitmentKey);
+        }
+
         // BSB22 vks have one extra IC slot for the commitment-derived
         // hash wire that gnark appends to the public-witness vector.
         if public_inputs.len() + 2 != verifyingkey.vk_ic.len() {
             return Err(Groth16Error::InvalidPublicInputsLength);
-        }
-
-        if verifyingkey.vk_commitment.is_none() {
-            return Err(Groth16Error::MissingCommitmentKey);
         }
 
         Ok(Groth16Verifier {
@@ -189,7 +191,7 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
                 g1_mul_add(&self.verifyingkey.vk_ic[i + 1], input, &prepared_public_inputs)?;
         }
 
-        // BSB22 extension: when the proof carries a Pedersen
+        // BSB22 extension: when the proof includes a Pedersen
         // commitment, gnark's verifier (verify.go:77-115) appends one
         // extra wire to publicWitness — the BSB22 hash of the
         // commitment bytes — and then adds the raw commitment G1
@@ -218,8 +220,11 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
                 g1_mul_add(commitment_hash_ic, &commitment_hash_fe, &prepared_public_inputs)?;
 
             // 3. Add the raw commitment G1 point itself to kSum
-            //    (verify.go:113-115).
-            prepared_public_inputs = g1_add(commitment, &prepared_public_inputs)?;
+            //    (verify.go:113-115). The commitment is prover-supplied
+            //    bytes; a syscall rejection here means the point itself
+            //    is invalid.
+            prepared_public_inputs = g1_add(commitment, &prepared_public_inputs)
+                .map_err(|_| Groth16Error::Bsb22InvalidCommitmentPoint)?;
         }
 
         self.prepared_public_inputs = prepared_public_inputs;
@@ -281,11 +286,12 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
     /// len(vk) == 1 && len(pok) == 1).
     ///
     /// Invariant: `proof_commitment`, `proof_commitment_pok`, and
-    /// `vk_commitment` are always all-Some (set together by
+    /// `vk_commitment` are all-Some (set together by
     /// `new_with_commitment`, which requires the vk commitment key) or
-    /// all-None (from `new`, which rejects commitment-carrying vks).
-    /// The if-let form fails closed — skipping the check — rather than
-    /// panicking if that invariant were ever violated.
+    /// all-None (from `new`, which rejects vks that contain one). The
+    /// fields are private and the constructors are the only writers,
+    /// so a mixed state is unreachable; the if-let matches the
+    /// all-Some case and makes the standard-Groth16 case a no-op.
     #[cfg(feature = "bsb22")]
     fn verify_commitment_pok(&self) -> Result<(), Groth16Error> {
         if let (Some(commitment), Some(pok), Some(commitment_key)) = (
