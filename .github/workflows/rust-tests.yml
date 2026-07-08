@@ -17,6 +17,7 @@ env:
   RUST_TOOLCHAIN: "1.90.0"
   NODE_VERSION: "22"
   CIRCOM_VERSION: "v2.2.2"
+  SOLANA_VERSION: "stable"
 
 jobs:
   test-rust:
@@ -39,6 +40,15 @@ jobs:
       - name: Compile circuit and generate keys
         working-directory: tests/rust-vk
         run: npm run build-all
+
+      - name: Install Solana toolchain (for cargo build-sbf)
+        shell: bash
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/${SOLANA_VERSION}/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Build SBF program (bsb22 litesvm test loads this .so)
+        run: cargo build-sbf --manifest-path tests/bsb22-program/Cargo.toml
 
       - name: Build workspace
         run: cargo build --workspace
