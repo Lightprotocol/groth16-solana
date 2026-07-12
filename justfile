@@ -27,7 +27,7 @@ check-all:
 # load it.
 
 # Everything CI runs after toolchain setup
-ci: lint build-circuit build build-program-profiled test-workspace test-unit bench check-benchmarks
+ci: lint check-nostd build-circuit build build-program-profiled test-workspace test-unit bench check-benchmarks
 
 # Compile the rust-vk test circuit and generate its keys (requires npm + circom)
 build-circuit:
@@ -100,6 +100,25 @@ fmt-check:
 
 clippy:
     cargo clippy --workspace --all-targets -- -D warnings
+
+# Prove the solana-target dependency graph is really no_std: compile
+# against a sysroot containing only core and alloc (nightly build-std)
+# for a BPF target spec with os = "solana" (ci/solana-nostd.json), so
+# the cfg(target_os = "solana") branch is active and any std usage
+# anywhere in the dep graph fails with E0463. Neither host builds nor
+# `cargo build-sbf` can catch this: both sysroots ship a std crate
+# (platform-tools' is a stub, but it links). Only the on-chain surface
+# is checked; the build-time/host features (circom-vk, gnark-vk,
+# circom) don't need to be no_std and are excluded.
+#
+# Requires: rustup toolchain install nightly --component rust-src
+
+nostd_check := "cargo +nightly check -p groth16-solana --target ci/solana-nostd.json -Z build-std=core,alloc -Z json-target-spec"
+
+# Compile the on-chain feature surface against a core+alloc-only sysroot
+check-nostd:
+    {{ nostd_check }}
+    {{ nostd_check }} --features bsb22
 
 # Compile groth16-solana with no features, each feature alone, and all features
 check-features:

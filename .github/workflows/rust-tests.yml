@@ -17,7 +17,10 @@ env:
   RUST_TOOLCHAIN: "1.90.0"
   NODE_VERSION: "22"
   CIRCOM_VERSION: "v2.2.2"
-  SOLANA_VERSION: "stable"
+  # Pinned, not "stable": the BENCHMARKS.md CU baselines depend on
+  # platform-tools codegen, so a toolchain bump changes CU counts and
+  # must land together with a re-baselined BENCHMARKS.md.
+  SOLANA_VERSION: "v3.1.15"
 
 jobs:
   test-rust:
@@ -32,6 +35,12 @@ jobs:
           rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
           node-version: ${{ env.NODE_VERSION }}
           circom-version: ${{ env.CIRCOM_VERSION }}
+
+      - name: Install nightly toolchain (for the no_std check)
+        # `just check-nostd` compiles the crate for a solana-os BPF
+        # target against a core+alloc-only sysroot; build-std needs
+        # nightly and the rust-src component.
+        run: rustup toolchain install nightly --profile minimal --component rust-src
 
       - name: Install Solana toolchain (for cargo build-sbf)
         shell: bash

@@ -8,9 +8,10 @@ enables that feature as a normal dependency, so they need the explicit
 `--features` invocation below. The mollusk suites need `cargo build-sbf`
 first, and `tests/rust-vk` needs its npm build. CI runs `just ci` with
 `PROPTEST_CASES=1000000`: lint (fmt check, clippy, the feature-matrix
-compile, README sync via cargo-rdme), circuit build, workspace build
-and tests, the all-features unit run, then BENCHMARKS.md regeneration
-with a diff check.
+compile, README sync via cargo-rdme), the no_std compile check
+(`check-nostd`), circuit build, workspace build and tests, the
+all-features unit run, then BENCHMARKS.md regeneration with a diff
+check.
 
 ### Unit and codegen tests (src/, tests/)
 
