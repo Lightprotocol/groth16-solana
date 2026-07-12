@@ -24,37 +24,37 @@ Regenerate with `cargo build-sbf --manifest-path tests/program/Cargo.toml -- --f
 
 | Function                       |   Total CU |     Net CU |
 | ------------------------------ | ---------- | ---------- |
-| `verify`                       |     78,291 |     78,291 |
+| `verify`                       |     78,293 |     78,293 |
 
 ## 2. Groth16 - 2 public inputs
 
 | Function                       |   Total CU |     Net CU |
 | ------------------------------ | ---------- | ---------- |
-| `verify`                       |     82,709 |     82,709 |
+| `verify`                       |     82,704 |     82,704 |
 
 ## 3. Groth16 - 4 public inputs
 
 | Function                       |   Total CU |     Net CU |
 | ------------------------------ | ---------- | ---------- |
-| `verify`                       |     91,447 |     91,447 |
+| `verify`                       |     91,448 |     91,448 |
 
 ## 4. Groth16 - 8 public inputs
 
 | Function                       |   Total CU |     Net CU |
 | ------------------------------ | ---------- | ---------- |
-| `verify`                       |    108,935 |    108,935 |
+| `verify`                       |    108,762 |    108,762 |
 
 ## 5. Groth16-bsb22 - 1 public input
 
 | Function                       |   Total CU |     Net CU |
 | ------------------------------ | ---------- | ---------- |
-| `verify_with_bsb22_commitment` |    211,459 |    211,459 |
+| `verify_with_bsb22_commitment` |    211,461 |    211,461 |
 
 ## 6. Groth16-bsb22 - 2 public inputs
 
 | Function                       |   Total CU |     Net CU |
 | ------------------------------ | ---------- | ---------- |
-| `verify_with_bsb22_commitment` |    215,917 |    215,917 |
+| `verify_with_bsb22_commitment` |    215,912 |    215,912 |
 
 ## 7. Groth16-bsb22 - 4 public inputs
 
@@ -66,5 +66,5 @@ Regenerate with `cargo build-sbf --manifest-path tests/program/Cargo.toml -- --f
 
 | Function                       |   Total CU |     Net CU |
 | ------------------------------ | ---------- | ---------- |
-| `verify_with_bsb22_commitment` |    242,160 |    242,160 |
+| `verify_with_bsb22_commitment` |    241,985 |    241,985 |
 

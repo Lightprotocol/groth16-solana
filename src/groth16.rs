@@ -176,17 +176,22 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
     }
 
     pub fn prepare_inputs<const CHECK: bool>(&mut self) -> Result<(), Groth16Error> {
-        let mut prepared_public_inputs = self.verifyingkey.vk_ic[0];
+        let mut prepared_public_inputs = *self
+            .verifyingkey
+            .vk_ic
+            .first()
+            .ok_or(Groth16Error::InvalidPublicInputsLength)?;
 
         for (i, input) in self.public_inputs.iter().enumerate() {
             if CHECK && !is_less_than_bn254_field_size_be(input) {
                 return Err(Groth16Error::PublicInputGreaterThanFieldSize);
             }
-            prepared_public_inputs = g1_mul_add(
-                &self.verifyingkey.vk_ic[i + 1],
-                input,
-                &prepared_public_inputs,
-            )?;
+            let input_ic = self
+                .verifyingkey
+                .vk_ic
+                .get(i + 1)
+                .ok_or(Groth16Error::InvalidPublicInputsLength)?;
+            prepared_public_inputs = g1_mul_add(input_ic, input, &prepared_public_inputs)?;
         }
 
         // BSB22 extension: when the proof includes a Pedersen
