@@ -21,10 +21,10 @@
 // tests (embeds the proofs) — regenerate the same fixture set instead
 // of sharing committed binaries. Determinism is asserted by
 // TestGenerateIsDeterministic; if a gnark upgrade ever samples
-// randomness concurrently the test fails loudly.
+// randomness concurrently the test fails.
 //
 // SECURITY NOTE: deterministic setup means PUBLICLY KNOWN toxic waste.
-// These keys are for CU benchmarks only and must never guard value.
+// These keys are for CU benchmarks only.
 package bench
 
 import (
@@ -75,7 +75,7 @@ func (c *BenchCircuit) Define(api frontend.API) error {
 		}
 		// Lookup over the PRIVATE wire Y so the commitment has no
 		// committed public wires (NbPublicCommitted == 0), matching
-		// the on-chain verifier's supported BSB22 shape.
+		// the BSB22 shape the Rust verifier supports.
 		results := table.Lookup(c.Y)
 		api.AssertIsEqual(results[0], api.Mul(c.Y, c.Y))
 	}

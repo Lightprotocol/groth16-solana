@@ -7,7 +7,7 @@
 //! layout but stops at the K array — it does NOT read the trailing
 //! BSB22 sections (`PublicAndCommitmentCommitted` and `CommitmentKeys`)
 //! that gnark always emits, even for circuits without commitments. This module
-//! reads everything and rejects multi-commitment vk's
+//! reads everything and rejects multi-commitment vks
 //! ([`Groth16Error::Bsb22UnsupportedMultiCommitment`]).
 //!
 //! Layout — `gnark/backend/groth16/bn254/marshal.go::writeTo`:
@@ -33,7 +33,7 @@
 //! ```
 //!
 //! Multi-commitment circuits (`outerLen > 1` or `nbCommitmentKeys > 1`)
-//! are rejected loudly. Commitment-free circuits parse cleanly and produce a
+//! are rejected. Commitment-free circuits parse and produce a
 //! [`Groth16VerifyingkeyOwned`] with `vk_commitment` set to `None`.
 
 #[cfg(not(target_os = "solana"))]
@@ -48,8 +48,8 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 /// Owned counterpart of [`Groth16Verifyingkey`]. The borrowed form
-/// holds `&'a [[u8; 64]]` slices, which makes it perfect for
-/// embedding as a `pub const` in downstream programs but inconvenient
+/// holds `&'a [[u8; 64]]` slices, which suits embedding as a
+/// `pub const` in downstream programs but is inconvenient
 /// for runtime construction (e.g., the integration tests in
 /// `tests/gnark-ffi/`). This struct owns its `vk_ic` vector and exposes
 /// [`Self::as_borrowed`] to materialise a borrowed view that the
@@ -205,7 +205,7 @@ fn byte_list(bytes: &[u8]) -> String {
 /// Groth16Verifyingkey = …;` declaration built from a parsed
 /// [`Groth16VerifyingkeyOwned`]. Used by downstream programs that
 /// want to bake a gnark verifying key into their `.rodata` at build
-/// time (the on-chain verifier reads a borrowed `&'static` vk that
+/// time (the program reads a borrowed `&'static` vk that
 /// way, avoiding any runtime allocation).
 ///
 /// The generated source also includes the necessary `use
@@ -218,7 +218,7 @@ fn byte_list(bytes: &[u8]) -> String {
 /// the generated const compiles regardless of whether the `bsb22`
 /// feature is enabled on the downstream runtime dependency. The
 /// build-dependency on `groth16-solana` still needs
-/// `features = ["bsb22"]` because this parser module itself lives
+/// `features = ["gnark-vk"]` because this parser module itself lives
 /// behind that feature.
 #[cfg(not(target_os = "solana"))]
 fn bsb22_vk_to_rust_const(vk: &Groth16VerifyingkeyOwned, const_name: &str) -> String {
@@ -290,7 +290,7 @@ fn bsb22_vk_to_rust_const(vk: &Groth16VerifyingkeyOwned, const_name: &str) -> St
 
 /// Parse a gnark vk.bin file and write a Rust source file declaring
 /// `pub const <const_name>: Groth16Verifyingkey` matching it. Typical
-/// use is from a downstream program's `build.rs`:
+/// use is from a downstream program's `build.rs` or xtask command:
 ///
 /// ```rust,ignore
 /// fn main() {

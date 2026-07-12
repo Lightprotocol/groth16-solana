@@ -7,13 +7,13 @@
 //! to obtain real-world bytes for one of the three lookup variants.
 //!
 //! The chain of trust runs top-to-bottom: gnark's own
-//! `groth16.Verify` is exercised inside `gnark-fixture/main_test.go`
-//! (the smoke test that anchored task 2). If the in-repo verifier
+//! `groth16.Verify` is exercised inside `gnark-fixture/main_test.go`.
+//! If the in-repo verifier
 //! disagrees with gnark on the same proof bytes, the bug is in our
 //! port — not in the fixture.
 //!
-//! All tests are gated on the `bsb22` feature being enabled in the
-//! parent crate (which the `Cargo.toml` here forces).
+//! All tests are gated on the `bsb22` and `gnark-vk` features being
+//! enabled in the parent crate (which the `Cargo.toml` here forces).
 
 // `pub` so the integration tests under `tests/` (e.g. the
 // hash-to-field differential proptests) can reuse the same bindings
@@ -165,7 +165,7 @@ mod tests {
     /// the in-repo verifier. Negative tests mutate one field and then
     /// assert on [`ProofFields::verify`].
     struct ProofFields {
-        proof_a: [u8; 64], // already negated for the on-chain 4-pair check
+        proof_a: [u8; 64], // already negated for the 4-pair check
         proof_b: [u8; 128],
         proof_c: [u8; 64],
         commitment: [u8; 64],
@@ -176,10 +176,9 @@ mod tests {
     impl ProofFields {
         fn from_fixture(fixture: &VariantFixture) -> Self {
             // gnark emits proof.Ar in its non-negated form; the
-            // on-chain verifier runs the standard 4-pair Groth16 check
-            // which folds e(alpha, beta) onto the LHS, so it expects
-            // -Ar. Mirror the negation the standard-Groth16 groth16-solana test
-            // does, via the `negate_g1_be` public helper.
+            // verifier runs the standard 4-pair Groth16 check, which
+            // folds e(alpha, beta) onto the LHS, so it expects -Ar
+            // (produced with the `negate_g1_be` public helper).
             Self {
                 proof_a: negate_g1_be(&fixture.proof.proof_a()),
                 proof_b: fixture.proof.proof_b(),

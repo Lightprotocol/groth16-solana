@@ -6,12 +6,11 @@
 // package merges every deferred commit callback into a single
 // api.Commit() at finalization), and ZERO committed_wires (the lookup
 // queries are over the private witness Y, never the public input X).
-// The on-chain verifier therefore needs to hash only the 64-byte
+// The Rust verifier therefore needs to hash only the 64-byte
 // commitment for the BSB22 hash-to-field step.
 //
 // SECURITY NOTE: gnark's groth16.Setup is unsafe -- fresh tau, no
-// ceremony. The keys this fixture produces are sample bytes only and
-// must not be used for anything that has value attached to it.
+// ceremony. The keys this fixture produces are sample bytes only.
 //
 // C ABI:
 //
@@ -22,7 +21,7 @@
 //	FreeProveResult(p)
 //	FreeString(s)
 //
-// The C_ProveResult struct contains every byte the on-chain BSB22
+// The C_ProveResult struct contains every byte the Rust BSB22
 // verifier needs:
 //
 //	proof_a            G1 uncompressed BE         (64 bytes)  // NOT negated
@@ -150,7 +149,7 @@ func newAssignment(variant int, x, y *big.Int) (frontend.Circuit, error) {
 // =============================================================================
 // Constraint-system cache only. Compiling a circuit is deterministic
 // and reusable across calls within the same process, so caching `cs`
-// is safe and saves wall-clock. Proving keys and verifying keys are
+// is safe and saves time. Proving keys and verifying keys are
 // NOT cached: every Setup call writes fresh keys to a caller-provided
 // directory, and every Prove / NativeVerify call loads them from
 // disk. This keeps parallel Rust integration tests honest -- two
@@ -258,9 +257,8 @@ func Setup(variant C.int, outDir *C.char) *C.char {
 		return C.CString(err.Error())
 	}
 
-	// Print the CommitmentInfo so the Rust integration test (and
-	// task 1's empty-committed_wires verification) can confirm
-	// PublicAndCommitmentCommitted is empty for every variant.
+	// Print the CommitmentInfo so the Rust integration test can
+	// confirm PublicAndCommitmentCommitted is empty for every variant.
 	if commitments, ok := cs.GetCommitments().(constraint.Groth16Commitments); ok {
 		fmt.Fprintf(os.Stderr, "gnark-fixture variant=%d commitments=%+v\n", v, commitments)
 	}

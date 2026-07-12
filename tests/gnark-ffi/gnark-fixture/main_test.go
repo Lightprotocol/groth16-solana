@@ -39,7 +39,7 @@ func runVariant(t *testing.T, v int) {
 		t.Fatalf("compile: %v", err)
 	}
 
-	// Confirm task 1's empty-committed_wires invariant: every variant
+	// Confirm the empty-committed_wires invariant: every variant
 	// must have exactly one commitment with no public-committed wires.
 	commitments, ok := cs.GetCommitments().(constraint.Groth16Commitments)
 	if !ok {

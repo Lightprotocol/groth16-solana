@@ -1,8 +1,6 @@
 // Build the in-repo gnark fixture (`gnark-fixture/`) as a C static
 // archive via cgo, then run bindgen over the generated header so the
 // integration tests can call Setup / Prove / NativeVerify directly.
-//
-// Modeled on bsb22-minimal/ffi/build.rs.
 
 use std::{env, path::PathBuf, process::Command};
 

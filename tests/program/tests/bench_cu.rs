@@ -41,7 +41,7 @@ fn bench_cu() {
 
     let mut bench = CuBenchmark::new(ReadmeConfig {
         title: "groth16-solana CU Benchmarks".into(),
-        description: "Compute unit costs of on-chain Groth16 verification, measured with \
+        description: "Compute unit costs of Groth16 verification on Solana, measured with \
             [light-program-profiler](https://github.com/Lightprotocol/light-program-profiler) \
             under mollusk against the profiled build of `tests/program`. The matrix \
             covers plain Groth16 (`Groth16Verifier::new`) and BSB22 single-commitment proofs \

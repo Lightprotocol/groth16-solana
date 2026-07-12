@@ -1,5 +1,5 @@
 //! Negative tests for every Groth16 verifier variant, executed
-//! on-chain under mollusk. Each test pins the exact error the client
+//! under mollusk. Each test pins the exact error the client
 //! would see: `ProgramError::InvalidInstructionData` from the parsing
 //! gates, or `ProgramError::Custom(u32::from(Groth16Error::...))`
 //! from the verifier.
@@ -255,7 +255,7 @@ fn rejects_swapped_public_inputs() {
     let (mollusk, program_id) = setup();
     let f = fixture("plain_2");
     let mut data = build_ix_data(&f);
-    // Input order is binding: X = [1, 2] verified as [2, 1] fails.
+    // Swapping the order changes kSum: X = [1, 2] verified as [2, 1] fails.
     let first: [u8; 32] = f.public_inputs.get(..32).unwrap().try_into().unwrap();
     let second: [u8; 32] = f.public_inputs.get(32..64).unwrap().try_into().unwrap();
     assert_ne!(first, second, "swap test needs distinct inputs");

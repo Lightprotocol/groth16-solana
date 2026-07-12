@@ -20,7 +20,7 @@
 //! stack-allocated `[u8; MAX_SCRATCH]` arrays, the modular reduction
 //! uses arkworks' non-allocating LE path, and the result is
 //! serialized limb-by-limb into a stack array. This keeps the
-//! on-chain CU cost predictable and avoids BPF heap pressure.
+//! CU cost predictable and avoids BPF heap pressure.
 //!
 //! `msg` and `dst` are const-generic fixed-size arrays, so the RFC
 //! 9380 DST length limit and the scratch-buffer capacity are checked

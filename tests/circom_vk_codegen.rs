@@ -1,8 +1,8 @@
 //! Integration tests for the circom/snarkjs vk codegen
-//! (`groth16_solana::vk::circom`): the generated const must carry the
+//! (`groth16_solana::vk::circom`): the generated const must include the
 //! un-gated `vk_commitment` field, and malformed JSON must produce
 //! meaningful `VkParseError`s instead of integer-underflow panics.
-#![cfg(feature = "vk")]
+#![cfg(feature = "circom-vk")]
 
 use groth16_solana::vk::circom::parse_vk_json_to_rust_string;
 

@@ -6,8 +6,8 @@
 // The generator seeds gnark's randomness (crypto/rand.Reader swap in
 // tests/gnark-ffi/gnark-fixture/bench), so every build — the SBF build
 // that bakes the vks and the host test build that embeds the matching
-// proofs — reproduces byte-identical fixtures. No fixture files are
-// committed; the only requirement is a Go toolchain, which
+// proofs — reproduces byte-identical fixtures instead of reading
+// committed files. The only requirement is a Go toolchain, which
 // tests/gnark-ffi already needs.
 
 use groth16_solana::vk::gnark::generate_bsb22_vk_file;

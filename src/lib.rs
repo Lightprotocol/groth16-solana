@@ -16,11 +16,11 @@
 
 #![no_std]
 
-// The on-chain verification path (default and `bsb22` features on the
+// The verification path (default and `bsb22` features on the
 // Solana target) is heap-allocation-free; `alloc` is only needed by
 // host-side tooling (vk parsers, proof parser) and tests. Gating the
 // extern makes that a compile-time guarantee: any allocation
-// reintroduced into on-chain code fails to build for SBF.
+// reintroduced there fails to build for SBF.
 #[cfg(any(not(target_os = "solana"), feature = "circom"))]
 extern crate alloc;
 
@@ -46,7 +46,7 @@ pub(crate) mod hash_to_field;
 // is test-only data, not crate source; the `#[path]` include is what
 // lets `#[cfg(test)]` modules in src/ reach it as a crate-internal
 // module.
-#[cfg(all(test, feature = "bsb22"))]
+#[cfg(all(test, feature = "gnark-vk"))]
 #[path = "../tests/gnark-ffi/test_fixtures.rs"]
 pub(crate) mod test_fixtures;
 
@@ -60,12 +60,12 @@ pub use hash_to_field::hash_to_field_bn254_fr;
 /// proving stack: [`vk::circom`] for snarkjs JSON keys, [`vk::gnark`]
 /// for gnark `WriteRawTo` binaries (incl. BSB22 commitment keys).
 pub mod vk {
-    #[cfg(feature = "vk")]
+    #[cfg(feature = "circom-vk")]
     pub mod circom;
 
     // Host-only: the parser owns its IC column as a `Vec` and the
     // generator writes files; neither belongs in an SBF build, and
-    // excluding them keeps the on-chain build free of `alloc`.
-    #[cfg(all(feature = "bsb22", not(target_os = "solana")))]
+    // excluding them keeps that build free of `alloc`.
+    #[cfg(all(feature = "gnark-vk", not(target_os = "solana")))]
     pub mod gnark;
 }

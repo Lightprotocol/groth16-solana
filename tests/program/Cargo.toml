@@ -10,7 +10,7 @@ publish = false
 # so we can run `cargo build-sbf` and load the resulting .so into
 # mollusk for per-function CU profiling via light-program-profiler.
 # The bench regenerates BENCHMARKS.md; CI fails on uncommitted
-# BENCHMARKS.md diffs, so CU changes must be re-baselined consciously.
+# BENCHMARKS.md diffs, so CU changes must be re-baselined.
 #
 # The verifying keys are baked into `.rodata` at build time. build.rs
 # regenerates the (vk, proof) fixture sets deterministically via
@@ -50,7 +50,9 @@ light-program-profiler = { git = "https://github.com/Lightprotocol/light-program
 blake3 = { workspace = true }
 
 [build-dependencies]
-groth16-solana = { path = "../..", features = ["bsb22"] }
+# gnark-vk: build.rs only parses vks and generates consts; the
+# runtime dependency above carries the bsb22 verifier feature.
+groth16-solana = { path = "../..", features = ["gnark-vk"] }
 
 [dev-dependencies]
 # Mollusk CU-profiling harness (bench_cu.rs). Mollusk 0.3 is built on

@@ -138,8 +138,8 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
     /// `public_inputs.len() + 2` (the trailing `vk_ic` slot is the K
     /// column gnark appends for the commitment-derived hash wire).
     /// Multi-commitment circuits are not supported; the vk parser
-    /// rejects them at parse time with
-    /// [`Groth16Error::Bsb22UnsupportedMultiCommitment`].
+    /// (`gnark-vk` feature) rejects them at parse time with
+    /// `Groth16Error::Bsb22UnsupportedMultiCommitment`.
     #[cfg(feature = "bsb22")]
     pub fn new_with_commitment<'a>(
         proof_a: &'a [u8; 64],
@@ -359,7 +359,7 @@ pub fn is_less_than_bn254_field_size_be(bytes: &[u8; 32]) -> bool {
 ///
 /// Useful for preparing `proof.A` for a Groth16 verifier that expects
 /// the LHS of the pairing equation to include `-A` (e.g. gnark emits
-/// the non-negated form; the on-chain verifier folds `e(α, β)` onto
+/// the non-negated form; the verifier folds `e(α, β)` onto
 /// the LHS via the standard 4-pair check and therefore wants `-A`).
 pub fn negate_g1_be(g1: &[u8; 64]) -> [u8; 64] {
     // Identity check: all zeros -> identity, negation is identity.
@@ -762,7 +762,9 @@ mod tests {
     // verifier without the Go toolchain dep.
     // -------------------------------------------------------------------
 
-    #[cfg(feature = "bsb22")]
+    // Needs `gnark-vk` too: the fixture vk is parsed from gnark's
+    // WriteRawTo bytes.
+    #[cfg(all(feature = "bsb22", feature = "gnark-vk"))]
     mod bsb22_e2e {
         use super::*;
         use crate::vk::gnark::parse_gnark_vk_bytes;

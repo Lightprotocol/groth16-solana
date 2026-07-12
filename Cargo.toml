@@ -42,7 +42,7 @@ ark-serialize = { version = "0.5", default-features = false }
 # Pure-Rust SHA-256 for the host build only; on the Solana SBF target
 # hash-to-field uses the `sol_sha256` syscall, so `sha2` is not needed
 # there (see src/syscalls.rs). The `bsb22` feature activates this
-# optional dep; that activation is simply a no-op on the solana target.
+# optional dep; that activation is a no-op on the solana target.
 sha2 = { version = "0.10", default-features = false, optional = true }
 
 
@@ -57,7 +57,11 @@ elliptic-curve = { version = "0.13", default-features = false, features = ["hash
 proptest = "1"
 
 [features]
-vk = ["serde", "serde_json", "dep:num-bigint"]
+# snarkjs verification_key.json parser + Rust-const generator (vk::circom).
+circom-vk = ["serde", "serde_json", "dep:num-bigint"]
+# gnark vk.WriteRawTo parser + Rust-const generator (vk::gnark).
+# Independent of `bsb22`: parses plain and BSB22 vks alike.
+gnark-vk = []
 circom = ["circom-prover", "ark-groth16", "dep:ark-bn254", "dep:ark-ff"]
 bsb22 = ["sha2", "dep:ark-bn254", "dep:ark-ff"]
 # Test-only: re-exports `hash_to_field_bn254_fr` so the differential

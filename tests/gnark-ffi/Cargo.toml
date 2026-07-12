@@ -21,7 +21,7 @@ bindgen = "0.69"
 # inside lib.rs (since #[cfg(test)] gates the FFI tests but the FFI
 # bindings module itself sits at lib level). `bsb22-test` re-exports
 # `hash_to_field_bn254_fr` for the differential proptests in tests/.
-groth16-solana = { path = "../..", features = ["bsb22", "bsb22-test"] }
+groth16-solana = { path = "../..", features = ["bsb22", "bsb22-test", "gnark-vk"] }
 
 [dev-dependencies]
 proptest = "1"
