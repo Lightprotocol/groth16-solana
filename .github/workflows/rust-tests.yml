@@ -33,42 +33,19 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           circom-version: ${{ env.CIRCOM_VERSION }}
 
-      - name: Install npm dependencies (for circuit compilation)
-        working-directory: tests/rust-vk
-        run: npm install
-
-      - name: Compile circuit and generate keys
-        working-directory: tests/rust-vk
-        run: npm run build-all
-
       - name: Install Solana toolchain (for cargo build-sbf)
         shell: bash
         run: |
           sh -c "$(curl -sSfL https://release.anza.xyz/${SOLANA_VERSION}/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
 
-      - name: Build workspace
-        run: cargo build --workspace
+      - name: Install just
+        uses: extractions/setup-just@v2
 
-      - name: Build SBF program (profiled)
-        # The mollusk tests (tests/program: failing.rs and bench_cu.rs)
-        # load this .so; both register the profiling syscalls, so the
-        # profiled build serves the whole job.
-        run: cargo build-sbf --manifest-path tests/program/Cargo.toml -- --features profile-program
-
-      - name: Test workspace
-        # PROPTEST_CASES: soak the hash_to_field differential proptests
-        # (src/hash_to_field.rs) at 1M cases in CI; the local default
-        # is 1000 to keep the dev loop fast. Costs ~2 min in debug.
-        run: cargo test --workspace
+      - name: Build, test, bench (just ci)
+        # Circuit build, workspace build, profiled SBF build, workspace
+        # + all-features tests, BENCHMARKS.md regeneration and diff
+        # check -- see the `ci` recipe in the justfile.
+        run: just ci
         env:
           PROPTEST_CASES: "1000000"
-
-      - name: Regenerate BENCHMARKS.md (mollusk bench)
-        run: cargo test -p bsb22-integration-program --test bench_cu -- --ignored --nocapture
-
-      - name: Fail on uncommitted BENCHMARKS.md changes
-        # The bench fixtures and mollusk runtime are deterministic, so
-        # any diff here is a real CU change that must be re-baselined
-        # by committing the regenerated BENCHMARKS.md.
-        run: git diff --exit-code BENCHMARKS.md

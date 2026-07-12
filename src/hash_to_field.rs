@@ -66,7 +66,10 @@ fn expand_message_xmd_sha256_l48<const MSG_LEN: usize, const DST_LEN: usize>(
     const { assert!(DST_LEN <= 255) };
     // Biggest preimage is b_0: z_pad (64) + msg + l_i_b_str (2) +
     // 0x00 (1) + dst_prime (DST_LEN + 1). Must fit the scratch buffer.
-    const { assert!(R_IN_BYTES + MSG_LEN + 2 + 1 + DST_LEN + 1 <= MAX_SCRATCH) };
+    const {
+        let b0_len = R_IN_BYTES + MSG_LEN + 2 + 1 + (DST_LEN + 1);
+        assert!(b0_len <= MAX_SCRATCH)
+    };
 
     // Single scratch buffer reused across all three SHA-256 calls.
     let mut scratch = [0u8; MAX_SCRATCH];
@@ -148,6 +151,7 @@ pub fn hash_to_field_bn254_fr<const MSG_LEN: usize, const DST_LEN: usize>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
     use alloc::vec::Vec;
     use proptest::prelude::*;
 
@@ -210,8 +214,7 @@ mod tests {
         let dsts = [dst];
         let mut expander = ExpandMsgXmd::<Sha256>::expand_message(&[msg], &dsts, len_in_bytes)
             .expect("valid expand_message_xmd parameters");
-        let mut out = Vec::new();
-        out.resize(len_in_bytes, 0u8);
+        let mut out = vec![0u8; len_in_bytes];
         expander.fill_bytes(&mut out);
         out
     }
@@ -353,7 +356,7 @@ mod tests {
     expander_shape_proptest!(prop_expander_max_msg, 187, 1);
 
     fn hex_to_vec(s: &str) -> Vec<u8> {
-        assert!(s.len() % 2 == 0);
+        assert!(s.len().is_multiple_of(2));
         s.as_bytes()
             .chunks(2)
             .map(|pair| u8::from_str_radix(core::str::from_utf8(pair).unwrap(), 16).unwrap())

@@ -32,8 +32,8 @@ pub mod bind {
 mod tests {
     use super::bind;
     use groth16_solana::errors::Groth16Error;
-    use groth16_solana::vk::gnark::parse_gnark_vk_bytes;
     use groth16_solana::groth16::{negate_g1_be, Groth16Verifier, Groth16Verifyingkey};
+    use groth16_solana::vk::gnark::parse_gnark_vk_bytes;
     use std::ffi::{CStr, CString};
     use std::os::raw::{c_char, c_int};
     use std::path::Path;
