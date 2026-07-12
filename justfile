@@ -121,7 +121,9 @@ readme:
 check-readme:
     #!/usr/bin/env bash
     set -euo pipefail
-    command -v cargo-rdme >/dev/null || cargo install cargo-rdme
+    # --locked: a fresh resolve pulls deps whose MSRV exceeds the
+    # pinned CI toolchain; cargo-rdme's own lockfile compiles on it.
+    command -v cargo-rdme >/dev/null || cargo install --locked cargo-rdme
     cargo rdme --check
 
 # === Maintenance ===
