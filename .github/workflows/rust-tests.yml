@@ -50,6 +50,12 @@ jobs:
       - name: Build workspace
         run: cargo build --workspace
 
+      - name: Build SBF program (profiled)
+        # The mollusk tests (tests/program: failing.rs and bench_cu.rs)
+        # load this .so; both register the profiling syscalls, so the
+        # profiled build serves the whole job.
+        run: cargo build-sbf --manifest-path tests/program/Cargo.toml -- --features profile-program
+
       - name: Test workspace
         # PROPTEST_CASES: soak the hash_to_field differential proptests
         # (src/hash_to_field.rs) at 1M cases in CI; the local default
@@ -58,10 +64,8 @@ jobs:
         env:
           PROPTEST_CASES: "1000000"
 
-      - name: Regenerate BENCHMARKS.md (profiled build + mollusk bench)
-        run: |
-          cargo build-sbf --manifest-path tests/program/Cargo.toml -- --features profile-program
-          cargo test -p bsb22-integration-program --test bench_cu -- --ignored --nocapture
+      - name: Regenerate BENCHMARKS.md (mollusk bench)
+        run: cargo test -p bsb22-integration-program --test bench_cu -- --ignored --nocapture
 
       - name: Fail on uncommitted BENCHMARKS.md changes
         # The bench fixtures and mollusk runtime are deterministic, so

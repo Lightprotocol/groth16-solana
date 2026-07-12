@@ -60,4 +60,5 @@ mollusk-svm = "0.3.0"
 light-program-profiler = { git = "https://github.com/Lightprotocol/light-program-profiler", rev = "862df52dd8c6099c11f795553514c654f3c2c459", features = ["mollusk"] }
 mollusk-solana-account = { package = "solana-account", version = "2.2" }
 mollusk-solana-instruction = { package = "solana-instruction", version = "2.2" }
+mollusk-solana-program-error = { package = "solana-program-error", version = "2.2" }
 mollusk-solana-pubkey = { package = "solana-pubkey", version = "2.2" }

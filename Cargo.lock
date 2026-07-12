@@ -706,6 +706,7 @@ dependencies = [
  "solana-account",
  "solana-instruction",
  "solana-program",
+ "solana-program-error 2.2.2",
  "solana-pubkey",
 ]
 
