@@ -88,20 +88,17 @@ The `bsb22` feature adds:
   (rare; typical when a circuit calls raw `api.Commit` more than once)
   are rejected with `Groth16Error::Bsb22UnsupportedMultiCommitment`.
 
-**Cost on Solana: ~212k CU** per BSB22 verify, measured end to end with
-`solana-bn254` v3, the `sol_sha256` syscall for hash-to-field, and
-stack-allocated `expand_message_xmd` buffers (no heap allocations on the
-hot path). The source of truth for this figure is
-`tests/bsb22-program/tests/litesvm_cu.rs`. Re-measure via:
-
-```sh
-cargo build-sbf --manifest-path tests/bsb22-program/Cargo.toml
-cargo test     --manifest-path tests/bsb22-program/Cargo.toml -- --nocapture
-```
-
-The test asserts the cost stays under 350k CU and logs the exact
-figure for each run. Rough breakdown of the BSB22-specific work on
-top of a standard Groth16 verify:
+**Cost on Solana: ~212k CU** per BSB22 verify with one public input
+(vs ~78k CU for a plain Groth16 verify), end to end with
+pinocchio-bound `alt_bn128` and `sol_sha256` syscalls and
+stack-allocated `expand_message_xmd` buffers (no heap allocations on
+chain). [BENCHMARKS.md](BENCHMARKS.md) is the source of truth: a
+generated matrix of plain vs BSB22 verification at 1/2/4/8 public
+inputs, profiled per function with
+[light-program-profiler](https://github.com/Lightprotocol/light-program-profiler)
+(see the [Benchmarks](#benchmarks) section for how to regenerate it).
+Rough breakdown of the BSB22-specific work on top of a standard
+Groth16 verify:
 
 | Component                                  |
 |--------------------------------------------|
@@ -112,22 +109,60 @@ top of a standard Groth16 verify:
 
 ### gnark fixture
 
-A worked example lives at `tests/bsb22/gnark-fixture/main.go`: a single Go
+A worked example lives at `tests/gnark-ffi/gnark-fixture/main.go`: a single Go
 file that defines three circuit variants (1, 2, and 3 `logderivlookup`
 queries respectively, all merged into one BSB22 commitment by gnark) and
 exposes `Setup` / `Prove` / `NativeVerify` via cgo. The Rust integration
-test crate `tests/bsb22/` compiles it to a C archive at build time, runs
+test crate `tests/gnark-ffi/` compiles it to a C archive at build time, runs
 bindgen, and exercises the verifier on real proofs from each variant. To
 work with the fixture you need a Go toolchain installed (gnark v0.14).
 
 ```sh
 cargo test -p groth16-solana                    # standard Groth16, default features
 cargo test -p groth16-solana --features bsb22   # adds BSB22 unit tests
-cargo test -p groth16-solana-tests-bsb22        # FFI integration tests (requires Go)
+cargo test -p groth16-solana-gnark-ffi        # FFI integration tests (requires Go)
 ```
 
 The verifier is a Rust port of gnark's `backend/groth16/bn254/verify.go`
 (single-commitment case).
+
+## Benchmarks
+
+[BENCHMARKS.md](BENCHMARKS.md) lists the on-chain CU cost of every
+verification shape — plain Groth16 and BSB22 (one Pedersen
+commitment), each at 1/2/4/8 public inputs — profiled per function
+with [light-program-profiler](https://github.com/Lightprotocol/light-program-profiler)
+under mollusk.
+
+The measured program is `tests/program`, which dispatches a
+selector byte to one baked verifying key per variant. Its `build.rs`
+regenerates all proofs and verifying keys deterministically (gnark
+`Setup`/`Prove` with seeded randomness, see
+`tests/gnark-ffi/gnark-fixture/bench`), so no fixture binaries are
+committed and byte-identical fixtures reach both the SBF program build
+and the host test build. Building the program therefore requires a Go
+toolchain, like `tests/gnark-ffi`.
+
+Regenerate BENCHMARKS.md with:
+
+```sh
+cargo build-sbf --manifest-path tests/program/Cargo.toml -- --features profile-program
+cargo test -p bsb22-integration-program --test bench_cu -- --ignored --nocapture
+```
+
+The order matters: `cargo test-sbf` (and plain `cargo build-sbf`)
+produce an unprofiled `.so`, which is what the litesvm sanity tests
+in `tests/program/tests/litesvm_cu.rs` expect:
+
+```sh
+cargo build-sbf --manifest-path tests/program/Cargo.toml
+cargo test -p bsb22-integration-program --test litesvm_cu -- --nocapture
+```
+
+Those tests re-verify every variant end to end on litesvm and assert
+a per-variant CU envelope of last-measured + ~10% (see the fixture
+table in `tests/program/src/lib.rs`), so a regression of more
+than ~10% on any variant fails CI.
 
 ## Audit
 The groth16_solana release 0.0.1 has been audited during the Light Protocol v3 audit. Check out the report [here](https://file.notion.so/f/f/3e18f32c-2f42-4786-8870-c571eb0af77e/ebf1b371-2456-4127-b419-1a9812108368/Light_Protocol_V3_Audit_Report.pdf?id=2169256e-e998-4d50-a922-4602a20fe65b&table=block&spaceId=3e18f32c-2f42-4786-8870-c571eb0af77e&expirationTimestamp=1722110400000&signature=Q4NG6VMKx8UqG-xze7eKwdYGINTlIoC7-TI49wGJGSU&downloadName=Light+Protocol+V3+Audit+Report.pdf). 

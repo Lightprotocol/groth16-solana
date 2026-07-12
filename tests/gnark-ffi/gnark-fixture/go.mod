@@ -1,4 +1,4 @@
-module github.com/lightprotocol/groth16-solana/tests/bsb22/gnark-fixture
+module github.com/lightprotocol/groth16-solana/tests/gnark-ffi/gnark-fixture
 
 go 1.24.0
 

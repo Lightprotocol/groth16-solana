@@ -48,7 +48,7 @@ jobs:
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
 
       - name: Build SBF program (bsb22 litesvm test loads this .so)
-        run: cargo build-sbf --manifest-path tests/bsb22-program/Cargo.toml
+        run: cargo build-sbf --manifest-path tests/program/Cargo.toml
 
       - name: Build workspace
         run: cargo build --workspace

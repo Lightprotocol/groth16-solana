@@ -40,8 +40,18 @@ pub mod proof_parser;
 #[cfg(feature = "bsb22")]
 pub(crate) mod hash_to_field;
 
+// Baked, reproducible BSB22 fixture bytes shared by the lib-internal
+// unit tests (see the module docs for regeneration). Lives in
+// tests/gnark-ffi/ next to the generator that produces it because it
+// is test-only data, not crate source; the `#[path]` include is what
+// lets `#[cfg(test)]` modules in src/ reach it as a crate-internal
+// module.
+#[cfg(all(test, feature = "bsb22"))]
+#[path = "../tests/gnark-ffi/test_fixtures.rs"]
+pub(crate) mod test_fixtures;
+
 /// Test-only escape hatch (`bsb22-test` feature): the differential
-/// proptests in `tests/bsb22/` compare this against gnark-crypto's
+/// proptests in `tests/gnark-ffi/` compare this against gnark-crypto's
 /// `fr/hash_to_field` via FFI. Not a stable API surface.
 #[cfg(feature = "bsb22-test")]
 pub use hash_to_field::hash_to_field_bn254_fr;

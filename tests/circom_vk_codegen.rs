@@ -39,5 +39,9 @@ fn rejects_empty_point_coordinates() {
     let json = MINIMAL_VK_JSON.replace(r#""vk_alpha_1": ["1", "2", "1"]"#, r#""vk_alpha_1": []"#);
     let err = parse_vk_json_to_rust_string(&json).unwrap_err();
     let msg = format!("{}", err);
-    assert!(msg.contains("vk_alpha_1 is empty"), "unexpected error: {}", msg);
+    assert!(
+        msg.contains("vk_alpha_1 is empty"),
+        "unexpected error: {}",
+        msg
+    );
 }

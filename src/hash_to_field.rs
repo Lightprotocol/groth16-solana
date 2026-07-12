@@ -153,7 +153,7 @@ mod tests {
 
     /// Golden vectors harvested from gnark-crypto v0.19.0 via the
     /// `TestHashToFieldGoldenVectors` Go test in
-    /// `tests/bsb22/gnark-fixture/main_test.go`. Run that test and
+    /// `tests/gnark-ffi/gnark-fixture/main_test.go`. Run that test and
     /// regenerate this list if you ever bump the gnark-crypto version.
     const DST: &[u8; 16] = b"bsb22-commitment";
 

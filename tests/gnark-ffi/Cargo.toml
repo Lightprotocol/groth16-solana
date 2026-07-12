@@ -1,5 +1,5 @@
 [package]
-name = "groth16-solana-tests-bsb22"
+name = "groth16-solana-gnark-ffi"
 version = "0.0.0"
 edition = "2021"
 publish = false

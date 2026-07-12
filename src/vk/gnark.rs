@@ -51,7 +51,7 @@ use alloc::vec::Vec;
 /// holds `&'a [[u8; 64]]` slices, which makes it perfect for
 /// embedding as a `pub const` in downstream programs but inconvenient
 /// for runtime construction (e.g., the integration tests in
-/// `tests/bsb22/`). This struct owns its `vk_ic` vector and exposes
+/// `tests/gnark-ffi/`). This struct owns its `vk_ic` vector and exposes
 /// [`Self::as_borrowed`] to materialise a borrowed view that the
 /// verifier consumes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -257,7 +257,10 @@ fn bsb22_vk_to_rust_const(vk: &Groth16VerifyingkeyOwned, const_name: &str) -> St
         "    vk_alpha_g1: [{}],\n",
         byte_list(&vk.vk_alpha_g1)
     ));
-    out.push_str(&format!("    vk_beta_g2: [{}],\n", byte_list(&vk.vk_beta_g2)));
+    out.push_str(&format!(
+        "    vk_beta_g2: [{}],\n",
+        byte_list(&vk.vk_beta_g2)
+    ));
     out.push_str(&format!(
         "    vk_gamma_g2: [{}],\n",
         byte_list(&vk.vk_gamma_g2)
@@ -317,8 +320,7 @@ pub fn generate_bsb22_vk_file(
         std::fs::read(input_path.as_ref()).map_err(|_| Groth16Error::Bsb22VkFileIoFailed)?;
     let vk = parse_gnark_vk_bytes(&bytes)?;
     let rust = bsb22_vk_to_rust_const(&vk, const_name);
-    std::fs::create_dir_all(output_dir.as_ref())
-        .map_err(|_| Groth16Error::Bsb22VkFileIoFailed)?;
+    std::fs::create_dir_all(output_dir.as_ref()).map_err(|_| Groth16Error::Bsb22VkFileIoFailed)?;
     let out_path = output_dir.as_ref().join(output_filename);
     std::fs::write(&out_path, rust).map_err(|_| Groth16Error::Bsb22VkFileIoFailed)?;
     Ok(())
@@ -378,18 +380,16 @@ mod tests {
     use super::*;
     use alloc::vec;
 
-    /// Committed variant-1 vk snapshot shared with the `bsb22_e2e`
-    /// test in `src/groth16.rs` and the SBF program build.rs. See
-    /// `tests/fixtures/bsb22/`. The parser tests only assert the
-    /// shape (K column count, commitment-key presence), not the
-    /// actual coordinates — so regenerating the fixture does not
-    /// invalidate any of these tests.
-    const VARIANT_1_VK_BYTES: &[u8] =
-        include_bytes!("../../tests/fixtures/bsb22/vk_variant_1.bin");
+    /// Baked, reproducible `bsb22_1` vk snapshot shared with the
+    /// `bsb22_e2e` tests in `src/groth16.rs` (see
+    /// `crate::test_fixtures` for provenance and regeneration). The
+    /// parser tests only assert the shape (K column count,
+    /// commitment-key presence), not the actual coordinates.
+    use crate::test_fixtures::VK_BYTES;
 
     #[test]
-    fn parse_variant_1_vk_shape() {
-        let bytes = VARIANT_1_VK_BYTES;
+    fn parse_bsb22_vk_shape() {
+        let bytes = VK_BYTES;
         assert_eq!(bytes.len(), 1040);
         let vk = parse_gnark_vk_bytes(bytes).expect("parse");
 
@@ -397,7 +397,7 @@ mod tests {
         assert_eq!(vk.nr_pubinputs, 1);
         assert_eq!(vk.vk_ic.len(), 3);
 
-        // BSB22 commitment key is populated for variant 1.
+        // BSB22 commitment key is populated for the bsb22_1 fixture.
         assert!(vk.vk_commitment.is_some());
 
         // The borrowed view round-trips.
@@ -408,7 +408,7 @@ mod tests {
 
     #[test]
     fn rejects_truncated_input() {
-        let bytes = VARIANT_1_VK_BYTES;
+        let bytes = VK_BYTES;
         let err = parse_gnark_vk_bytes(&bytes[..bytes.len() - 8]).unwrap_err();
         assert_eq!(err, Groth16Error::Bsb22InvalidVerifyingKeyBinary);
     }
@@ -417,7 +417,7 @@ mod tests {
     fn rejects_trailing_bytes() {
         // Gnark emits a fixed-shape WriteRawTo blob; any bytes past
         // the last commitment key indicate corruption.
-        let mut bytes = VARIANT_1_VK_BYTES.to_vec();
+        let mut bytes = VK_BYTES.to_vec();
         bytes.push(0xab);
         let err = parse_gnark_vk_bytes(&bytes).unwrap_err();
         assert_eq!(err, Groth16Error::Bsb22InvalidVerifyingKeyBinary);
@@ -448,7 +448,7 @@ mod tests {
 
     #[test]
     fn bsb22_vk_to_rust_const_roundtrip() {
-        let bytes = VARIANT_1_VK_BYTES;
+        let bytes = VK_BYTES;
         let vk = parse_gnark_vk_bytes(bytes).unwrap();
         let src = bsb22_vk_to_rust_const(&vk, "VERIFYINGKEY");
         // Spot-check the shape without pinning exact whitespace: the
@@ -461,7 +461,7 @@ mod tests {
         assert!(src.contains("nr_pubinputs: 1,"));
         assert!(src.contains("vk_ic: VERIFYINGKEY_VK_IC,"));
         assert!(src.contains("vk_commitment: Some(CommitmentVerifyingKey {"));
-        // The variant-1 vk has 3 K-column entries.
+        // The bsb22_1 vk has 3 K-column entries.
         assert_eq!(src.matches("    [").count(), 3);
     }
 

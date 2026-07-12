@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "tests/rust-vk", "tests/bsb22", "tests/bsb22-program"]
+members = [".", "tests/rust-vk", "tests/gnark-ffi", "tests/program"]
 resolver = "2"
 
 # Pin transitive deps that would otherwise require edition2024 and
@@ -61,6 +61,6 @@ vk = ["serde", "serde_json", "dep:num-bigint"]
 circom = ["circom-prover", "ark-groth16", "dep:ark-bn254", "dep:ark-ff"]
 bsb22 = ["sha2", "dep:ark-bn254", "dep:ark-ff"]
 # Test-only: re-exports `hash_to_field_bn254_fr` so the differential
-# FFI tests in tests/bsb22/ can compare it against gnark-crypto.
+# FFI tests in tests/gnark-ffi/ can compare it against gnark-crypto.
 # Not a stable API surface.
 bsb22-test = ["bsb22"]

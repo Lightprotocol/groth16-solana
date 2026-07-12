@@ -16,7 +16,7 @@
 //! `src/hash_to_field.rs`; these properties cover random contents.
 
 use groth16_solana::hash_to_field_bn254_fr;
-use groth16_solana_tests_bsb22::bind;
+use groth16_solana_gnark_ffi::bind;
 use proptest::prelude::*;
 use std::ffi::CStr;
 use std::os::raw::c_int;
