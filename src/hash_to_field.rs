@@ -26,6 +26,7 @@
 //! 9380 DST length limit and the scratch-buffer capacity are checked
 //! at compile time and the functions are infallible.
 
+use crate::syscalls::sha256;
 use ark_bn254::Fr;
 use ark_ff::PrimeField;
 
@@ -43,48 +44,6 @@ const L: usize = 48;
 /// A `const` assertion in `expand_message_xmd_sha256_l48` rejects any
 /// instantiation whose preimage would exceed this, at compile time.
 const MAX_SCRATCH: usize = 256;
-
-/// Compute SHA-256 of `input`.
-///
-/// On the Solana SBF target this calls the `sol_sha256` runtime
-/// syscall directly via an inline `extern "C"` binding (the same
-/// binding pinocchio uses internally — avoids pulling the
-/// `solana-program` dep tree into `groth16-solana`). On host targets
-/// (`cargo test`) it falls back to the pure-Rust `sha2` crate.
-fn sha256(input: &[u8]) -> [u8; 32] {
-    #[cfg(target_os = "solana")]
-    {
-        // Use pinocchio's `define_syscall!`-bound `sol_sha256` rather than a bare
-        // `extern "C"` symbol: under the `static-syscalls` SBF ABI (platform-tools
-        // v1.54+) syscalls are dispatched by compile-time code, so a plain extern
-        // symbol does not resolve and silently leaves the output buffer zeroed.
-        //   fn sol_sha256(vals: *const u8, val_len: u64, hash_result: *mut u8) -> u64
-        // where `vals` is a pointer to an array of `(ptr, len)` pairs
-        // in the form of `&[&[u8]]`; `val_len` is the number of pairs.
-        use pinocchio::syscalls::sol_sha256;
-
-        let slices: [&[u8]; 1] = [input];
-        let mut out = [0u8; 32];
-        // SAFETY: `slices` lives until after the syscall returns;
-        // `out` is a fixed-size 32-byte buffer matching the SHA-256
-        // digest length the runtime writes.
-        unsafe {
-            sol_sha256(
-                slices.as_ptr() as *const u8,
-                slices.len() as u64,
-                out.as_mut_ptr(),
-            );
-        }
-        out
-    }
-    #[cfg(not(target_os = "solana"))]
-    {
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(input);
-        hasher.finalize().into()
-    }
-}
 
 /// RFC 9380 `expand_message_xmd` with SHA-256, specialized to the one
 /// output length this crate needs (`L = 48`, so `ell = 2`).
@@ -190,6 +149,7 @@ pub fn hash_to_field_bn254_fr<const MSG_LEN: usize, const DST_LEN: usize>(
 mod tests {
     use super::*;
     use alloc::vec::Vec;
+    use proptest::prelude::*;
 
     /// Golden vectors harvested from gnark-crypto v0.19.0 via the
     /// `TestHashToFieldGoldenVectors` Go test in
@@ -230,56 +190,30 @@ mod tests {
         assert_eq!(got, want);
     }
 
-    /// RFC 9380 `expand_message_xmd` (section 5.3.1) transcribed
-    /// directly from the spec pseudocode, with runtime-length inputs.
+    /// RFC 9380 `expand_message_xmd` reference: RustCrypto's
+    /// implementation from the `elliptic-curve` crate (dev-dependency),
+    /// the same code the k256/p256 curve crates use for hash-to-curve.
     ///
     /// The production `expand_message_xmd_sha256_l48` is specialized to
     /// L = 48, a length the official CFRG vectors do not cover, so RFC
     /// conformance is established in two hops:
     /// 1. `reference_matches_rfc9380_vectors` checks this reference
-    ///    against all 10 official expand_message_xmd(SHA-256) vectors
-    ///    (output lengths 32 and 128).
+    ///    (and our wiring of it) against all 10 official
+    ///    expand_message_xmd(SHA-256) vectors (output lengths 32/128).
     /// 2. `expander_matches_reference_grid` checks the production
     ///    expander against this reference at L = 48 across a grid of
     ///    msg/dst lengths.
     fn expand_message_xmd_reference(msg: &[u8], dst: &[u8], len_in_bytes: usize) -> Vec<u8> {
-        use sha2::{Digest, Sha256};
+        use elliptic_curve::hash2curve::{ExpandMsg, ExpandMsgXmd, Expander};
+        use sha2::Sha256;
 
-        let ell = len_in_bytes.div_ceil(B_IN_BYTES);
-        assert!(ell <= 255 && len_in_bytes < (1 << 16) && dst.len() <= 255);
-
-        let mut dst_prime = dst.to_vec();
-        dst_prime.push(dst.len() as u8);
-
-        // b_0 = H(Z_pad || msg || l_i_b_str || I2OSP(0, 1) || DST_prime)
-        let mut h = Sha256::new();
-        h.update([0u8; R_IN_BYTES]); // Z_pad: SHA-256 input block size
-        h.update(msg);
-        h.update((len_in_bytes as u16).to_be_bytes());
-        h.update([0u8]);
-        h.update(&dst_prime);
-        let b0: [u8; 32] = h.finalize().into();
-
-        // b_1 = H(b_0 || I2OSP(1, 1) || DST_prime)
-        let mut h = Sha256::new();
-        h.update(b0);
-        h.update([1u8]);
-        h.update(&dst_prime);
-        let mut bi: [u8; 32] = h.finalize().into();
-
-        let mut uniform = bi.to_vec();
-        for i in 2..=ell {
-            // b_i = H(strxor(b_0, b_(i-1)) || I2OSP(i, 1) || DST_prime)
-            let mut h = Sha256::new();
-            let xored: Vec<u8> = b0.iter().zip(bi.iter()).map(|(x, y)| x ^ y).collect();
-            h.update(&xored);
-            h.update([i as u8]);
-            h.update(&dst_prime);
-            bi = h.finalize().into();
-            uniform.extend_from_slice(&bi);
-        }
-        uniform.truncate(len_in_bytes);
-        uniform
+        let dsts = [dst];
+        let mut expander = ExpandMsgXmd::<Sha256>::expand_message(&[msg], &dsts, len_in_bytes)
+            .expect("valid expand_message_xmd parameters");
+        let mut out = Vec::new();
+        out.resize(len_in_bytes, 0u8);
+        expander.fill_bytes(&mut out);
+        out
     }
 
     /// All 10 official CFRG test vectors for expand_message_xmd with
@@ -333,7 +267,13 @@ mod tests {
                     core::array::from_fn(|i| (i as u8).wrapping_mul(17).wrapping_add($d));
                 let got = expand_message_xmd_sha256_l48(&msg, &dst);
                 let want = expand_message_xmd_reference(&msg, &dst, L);
-                assert_eq!(got.as_slice(), want.as_slice(), "MSG_LEN={} DST_LEN={}", $m, $d);
+                assert_eq!(
+                    got.as_slice(),
+                    want.as_slice(),
+                    "MSG_LEN={} DST_LEN={}",
+                    $m,
+                    $d
+                );
             }};
         }
         macro_rules! diff_msg_row {
@@ -363,13 +303,60 @@ mod tests {
         diff_case!(120, 68);
     }
 
+    /// Random-content property tests: the production expander must
+    /// agree with the library reference for arbitrary msg/dst bytes.
+    ///
+    /// `expand_message_xmd_sha256_l48` is const-generic over lengths,
+    /// so each shape is a separate monomorphization. Two shapes
+    /// suffice: the real BSB22 call (msg = one uncompressed G1 point,
+    /// dst_len = len("bsb22-commitment")) and the largest msg the
+    /// compile-time scratch assert admits (b_0 preimage exactly fills
+    /// MAX_SCRATCH). Content only flows through `copy_from_slice` and
+    /// one XOR, so random bytes guard those; the length dimension is
+    /// covered deterministically by `expander_matches_reference_grid`.
+    /// Proptest case count: 1000 by default, overridable for deeper
+    /// one-off soak runs, e.g. `PROPTEST_CASES=1000000 cargo test
+    /// --release`. (The env var must be read manually here: proptest
+    /// only honors it in `ProptestConfig::default()`, and an explicit
+    /// `with_cases` would silently ignore it.)
+    fn proptest_cases() -> u32 {
+        std::env::var("PROPTEST_CASES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1000)
+    }
+
+    macro_rules! expander_shape_proptest {
+        ($name:ident, $msg_len:literal, $dst_len:literal) => {
+            proptest! {
+                #![proptest_config(ProptestConfig::with_cases(proptest_cases()))]
+                #[test]
+                fn $name(
+                    msg in any::<[u8; $msg_len]>(),
+                    dst in any::<[u8; $dst_len]>(),
+                ) {
+                    let got = expand_message_xmd_sha256_l48(&msg, &dst);
+                    let want = expand_message_xmd_reference(&msg, &dst, L);
+                    prop_assert_eq!(
+                        got.as_slice(),
+                        want.as_slice(),
+                        "expander mismatch for MSG_LEN={} DST_LEN={}",
+                        $msg_len,
+                        $dst_len
+                    );
+                }
+            }
+        };
+    }
+
+    expander_shape_proptest!(prop_expander_bsb22_shape, 64, 16);
+    expander_shape_proptest!(prop_expander_max_msg, 187, 1);
+
     fn hex_to_vec(s: &str) -> Vec<u8> {
         assert!(s.len() % 2 == 0);
         s.as_bytes()
             .chunks(2)
-            .map(|pair| {
-                u8::from_str_radix(core::str::from_utf8(pair).unwrap(), 16).unwrap()
-            })
+            .map(|pair| u8::from_str_radix(core::str::from_utf8(pair).unwrap(), 16).unwrap())
             .collect()
     }
 

@@ -54,4 +54,9 @@ jobs:
         run: cargo build --workspace
 
       - name: Test workspace
+        # PROPTEST_CASES: soak the hash_to_field differential proptests
+        # (src/hash_to_field.rs) at 1M cases in CI; the local default
+        # is 1000 to keep the dev loop fast. Costs ~2 min in debug.
         run: cargo test --workspace
+        env:
+          PROPTEST_CASES: "1000000"

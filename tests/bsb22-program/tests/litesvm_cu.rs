@@ -115,6 +115,33 @@ fn bsb22_verify_on_chain_succeeds_and_reports_cu() {
 }
 
 #[test]
+fn bsb22_verify_on_chain_rejects_wrong_instruction_length() {
+    let (mut svm, payer) = setup_svm();
+
+    // One byte short and one byte long: the program accepts exactly
+    // 416 bytes and must reject both before touching the proof.
+    for wrong_len in [415usize, 417] {
+        let mut instruction_data = build_ix_data();
+        instruction_data.resize(wrong_len, 0);
+
+        let ix = Instruction {
+            program_id: program_id(),
+            accounts: vec![],
+            data: instruction_data,
+        };
+        let mut tx = Transaction::new_with_payer(&[ix], Some(&payer.pubkey()));
+        tx.sign(&[&payer], svm.latest_blockhash());
+
+        let send_result = svm.send_transaction(tx);
+        assert!(
+            send_result.is_err(),
+            "instruction data of len {} should be rejected",
+            wrong_len
+        );
+    }
+}
+
+#[test]
 fn bsb22_verify_on_chain_rejects_mutated_public_input() {
     let (mut svm, payer) = setup_svm();
     let mut instruction_data = build_ix_data();

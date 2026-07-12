@@ -24,6 +24,11 @@
 #[cfg(any(not(target_os = "solana"), feature = "circom"))]
 extern crate alloc;
 
+// proptest (dev-dependency) expands to std-using code; the crate
+// itself stays no_std, this only affects `cargo test` builds.
+#[cfg(test)]
+extern crate std;
+
 pub mod decompression;
 pub mod errors;
 pub mod groth16;
@@ -34,6 +39,12 @@ pub mod proof_parser;
 
 #[cfg(feature = "bsb22")]
 pub(crate) mod hash_to_field;
+
+/// Test-only escape hatch (`bsb22-test` feature): the differential
+/// proptests in `tests/bsb22/` compare this against gnark-crypto's
+/// `fr/hash_to_field` via FFI. Not a stable API surface.
+#[cfg(feature = "bsb22-test")]
+pub use hash_to_field::hash_to_field_bn254_fr;
 
 /// Verifying-key parsers and Rust-const generators, one submodule per
 /// proving stack: [`vk::circom`] for snarkjs JSON keys, [`vk::gnark`]

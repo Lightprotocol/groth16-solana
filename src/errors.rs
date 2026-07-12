@@ -67,8 +67,10 @@ pub enum Groth16Error {
     /// The verifier holds a partial BSB22 state: commitment, PoK, and
     /// vk commitment key must all be present or all be absent. The
     /// constructors enforce this, so hitting it means an internal
-    /// invariant was broken; the check fails closed rather than
-    /// skipping the PoK verification.
+    /// invariant was broken; both `prepare_inputs` (commitment vs vk
+    /// key) and `verify_commitment_pok` fail closed on a mixed state
+    /// rather than silently dropping the commitment wire or the PoK
+    /// check.
     #[cfg(feature = "bsb22")]
     #[error("Bsb22InconsistentCommitmentState")]
     Bsb22InconsistentCommitmentState,

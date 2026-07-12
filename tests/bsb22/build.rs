@@ -47,6 +47,7 @@ fn main() {
         .allowlist_function("Setup")
         .allowlist_function("Prove")
         .allowlist_function("NativeVerify")
+        .allowlist_function("HashToField")
         .allowlist_function("FreeProveResult")
         .allowlist_function("FreeString")
         .allowlist_type("C_ProveResult")

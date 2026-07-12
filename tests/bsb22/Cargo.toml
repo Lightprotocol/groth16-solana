@@ -19,8 +19,10 @@ bindgen = "0.69"
 [dependencies]
 # We need groth16-solana for the bindgen `mod bind` block to live
 # inside lib.rs (since #[cfg(test)] gates the FFI tests but the FFI
-# bindings module itself sits at lib level).
-groth16-solana = { path = "../..", features = ["bsb22"] }
+# bindings module itself sits at lib level). `bsb22-test` re-exports
+# `hash_to_field_bn254_fr` for the differential proptests in tests/.
+groth16-solana = { path = "../..", features = ["bsb22", "bsb22-test"] }
 
 [dev-dependencies]
+proptest = "1"
 tempfile = "3"

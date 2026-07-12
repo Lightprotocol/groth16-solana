@@ -15,13 +15,16 @@
 //! All tests are gated on the `bsb22` feature being enabled in the
 //! parent crate (which the `Cargo.toml` here forces).
 
+// `pub` so the integration tests under `tests/` (e.g. the
+// hash-to-field differential proptests) can reuse the same bindings
+// instead of re-including the bindgen output.
 #[allow(
     non_camel_case_types,
     non_snake_case,
     non_upper_case_globals,
     dead_code
 )]
-mod bind {
+pub mod bind {
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
 
@@ -268,6 +271,40 @@ mod tests {
             ),
             "unexpected err: {:?}",
             err
+        );
+    }
+
+    #[test]
+    fn variant_1_rejects_cross_proof_commitment_and_pok() {
+        let (dir, fixture) = setup_variant(1);
+        // Second proof under the same vk with X = 6 (Y = 36 keeps the
+        // lookup indices inside the 64-entry table). Different
+        // committed private wires give a different Pedersen
+        // commitment; gnark's commitment is deterministic per
+        // witness, so a second X = 7 proof would be vacuous here.
+        let proof2 = ffi_prove(1, 6, dir.path());
+        if let Some(err) = proof2.error() {
+            panic!("Prove variant=1 x=6 returned error: {}", err);
+        }
+        let vk = parse_gnark_vk_bytes(&fixture.vk_bytes).expect("parse vk");
+        let mut fields = ProofFields::from_fixture(&fixture);
+
+        assert_ne!(
+            fields.commitment,
+            proof2.commitment(),
+            "premise: the two proofs must not share a commitment"
+        );
+
+        // Proof 1's a/b/c and public input with proof 2's (D, pok).
+        // The pair is self-consistent so the PoK pairing would pass,
+        // but hashing the foreign commitment changes kSum and the
+        // main pairing rejects first.
+        fields.commitment = proof2.commitment();
+        fields.pok = proof2.commitment_pok();
+
+        assert_eq!(
+            fields.verify(&vk.as_borrowed()),
+            Err(Groth16Error::ProofVerificationFailed)
         );
     }
 

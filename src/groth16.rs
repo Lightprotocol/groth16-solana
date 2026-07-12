@@ -27,7 +27,6 @@
 //!
 use crate::errors::Groth16Error;
 use crate::syscalls::{g1_addition_be, g1_multiplication_be, pairing_be};
-use ark_ff::PrimeField;
 
 /// BSB22 Pedersen commitment verifying key.
 /// `g2`             = pedersen.VerifyingKey.G
@@ -205,30 +204,39 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
         //
         // CU cost is measured by tests/bsb22-program/tests/litesvm_cu.rs (source of truth).
         #[cfg(feature = "bsb22")]
-        if let Some(commitment) = self.proof_commitment {
-            // 1. Hash the commitment to a field element using gnark's
-            //    DST "bsb22-commitment" (constraint/commitment.go:7).
-            let commitment_hash_fe =
-                crate::hash_to_field::hash_to_field_bn254_fr(commitment, b"bsb22-commitment");
+        {
+            if self.verifyingkey.vk_commitment.is_some() != self.proof_commitment.is_some() {
+                return Err(Groth16Error::Bsb22InconsistentCommitmentState);
+            }
 
-            // 2. Multiply by the trailing K column (vk_ic[NR_INPUTS + 1])
-            //    that gnark appended for the commitment-derived hash
-            //    wire, and add to the running kSum.
-            let commitment_hash_ic = &self.verifyingkey.vk_ic[NR_INPUTS + 1];
-            prepared_public_inputs = g1_mul_add(
-                commitment_hash_ic,
-                &commitment_hash_fe,
-                &prepared_public_inputs,
-            )?;
+            if let Some(commitment) = self.proof_commitment {
+                // 1. Hash the commitment to a field element using gnark's
+                //    DST "bsb22-commitment" (constraint/commitment.go:7).
+                let commitment_hash_fe =
+                    crate::hash_to_field::hash_to_field_bn254_fr(commitment, b"bsb22-commitment");
 
-            // 3. Add the raw commitment G1 point itself to kSum
-            //    (verify.go:113-115). The commitment is prover-supplied
-            //    bytes; a syscall rejection here means the point itself
-            //    is invalid.
-            prepared_public_inputs = g1_add(commitment, &prepared_public_inputs)
-                .map_err(|_| Groth16Error::Bsb22InvalidCommitmentPoint)?;
+                // 2. Multiply by the trailing K column (vk_ic[NR_INPUTS + 1])
+                //    that gnark appended for the commitment-derived hash
+                //    wire, and add to the running kSum.
+                let commitment_hash_ic = self
+                    .verifyingkey
+                    .vk_ic
+                    .get(NR_INPUTS + 1)
+                    .ok_or(Groth16Error::InvalidPublicInputsLength)?;
+                prepared_public_inputs = g1_mul_add(
+                    commitment_hash_ic,
+                    &commitment_hash_fe,
+                    &prepared_public_inputs,
+                )?;
+
+                // 3. Add the raw commitment G1 point itself to kSum
+                //    (verify.go:113-115). The commitment is prover-supplied
+                //    bytes; a syscall rejection here means the point itself
+                //    is invalid.
+                prepared_public_inputs = g1_add(commitment, &prepared_public_inputs)
+                    .map_err(|_| Groth16Error::Bsb22InvalidCommitmentPoint)?;
+            }
         }
-
         self.prepared_public_inputs = prepared_public_inputs;
 
         Ok(())
@@ -321,22 +329,22 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
     }
 }
 
+/// BN254 scalar field (Fr) modulus as 32 big-endian bytes:
+/// 21888242871839275222246405745257275088548364400416034343698204186575808495617
+/// = 0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001.
+/// Kept as a byte constant so the field-size check needs no arkworks
+/// dependency; the `fr_modulus_constant_matches_ark` test pins it to
+/// `ark_bn254::Fr::MODULUS`.
+const FR_MODULUS_BE: [u8; 32] = [
+    0x30, 0x64, 0x4e, 0x72, 0xe1, 0x31, 0xa0, 0x29, 0xb8, 0x50, 0x45, 0xb6, 0x81, 0x81, 0x58,
+    0x5d, 0x28, 0x33, 0xe8, 0x48, 0x79, 0xb9, 0x70, 0x91, 0x43, 0xe1, 0xf5, 0x93, 0xf0, 0x00,
+    0x00, 0x01,
+];
+
 pub fn is_less_than_bn254_field_size_be(bytes: &[u8; 32]) -> bool {
-    let value = ark_ff::BigInt::<4>::new([
-        u64::from_be_bytes([
-            bytes[24], bytes[25], bytes[26], bytes[27], bytes[28], bytes[29], bytes[30], bytes[31],
-        ]),
-        u64::from_be_bytes([
-            bytes[16], bytes[17], bytes[18], bytes[19], bytes[20], bytes[21], bytes[22], bytes[23],
-        ]),
-        u64::from_be_bytes([
-            bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
-        ]),
-        u64::from_be_bytes([
-            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-        ]),
-    ]);
-    value < ark_bn254::Fr::MODULUS.into()
+    // Fixed-width big-endian comparison is exactly lexicographic byte
+    // order, which is what the array `Ord` impl provides.
+    *bytes < FR_MODULUS_BE
 }
 
 /// Negate a BN254 G1 point serialized as 64 uncompressed big-endian
@@ -401,7 +409,7 @@ mod tests {
 
     use super::*;
     use ark_bn254;
-    use ark_ff::BigInteger;
+    use ark_ff::{BigInteger, PrimeField};
     use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
     use core::ops::Neg;
     type G1 = ark_bn254::g1::G1Affine;
@@ -581,6 +589,14 @@ mod tests {
     ];
 
     #[test]
+    fn fr_modulus_constant_matches_ark() {
+        assert_eq!(
+            FR_MODULUS_BE.to_vec(),
+            ark_bn254::Fr::MODULUS.to_bytes_be()
+        );
+    }
+
+    #[test]
     fn test_is_less_than_bn254_field_size_be() {
         let bytes = [0u8; 32];
         assert!(is_less_than_bn254_field_size_be(&bytes));
@@ -590,6 +606,10 @@ mod tests {
         bytes.copy_from_slice(&modulus_le);
         bytes.reverse();
         assert!(!is_less_than_bn254_field_size_be(&bytes));
+
+        // modulus - 1 is the largest valid input.
+        bytes[31] -= 1;
+        assert!(is_less_than_bn254_field_size_be(&bytes));
     }
 
     #[test]
@@ -767,6 +787,48 @@ mod tests {
         const PUBLIC_INPUT_BYTES: &[u8; 32] =
             include_bytes!("../tests/fixtures/bsb22/public_input_variant_1.bin");
 
+        /// BN254 G1 generator (x = 1, y = 2) as 64 uncompressed BE
+        /// bytes — a valid on-curve point that is unrelated to the
+        /// fixture's commitment and PoK.
+        const G1_GENERATOR_BE: [u8; 64] = {
+            let mut bytes = [0u8; 64];
+            bytes[31] = 1;
+            bytes[63] = 2;
+            bytes
+        };
+
+        /// Deterministic off-curve encoding (x = 0, y = 1): y^2 = 1
+        /// but x^3 + 3 = 3, so the alt_bn128 syscalls reject it.
+        const NOT_ON_CURVE_G1_BE: [u8; 64] = {
+            let mut bytes = [0u8; 64];
+            bytes[63] = 1;
+            bytes
+        };
+
+        /// Verify the fixture proof against `vk` with the commitment
+        /// and PoK substituted; everything else stays honest, so
+        /// negative tests isolate the commitment/PoK handling.
+        fn verify_with_commitment_and_pok(
+            commitment: &[u8; 64],
+            pok: &[u8; 64],
+            vk: &Groth16Verifyingkey,
+        ) -> Result<(), Groth16Error> {
+            let proof_a = negate_g1_be(PROOF_A_BYTES);
+            let public_inputs: [[u8; 32]; 1] = [*PUBLIC_INPUT_BYTES];
+
+            let mut verifier = Groth16Verifier::new_with_commitment(
+                &proof_a,
+                PROOF_B_BYTES,
+                PROOF_C_BYTES,
+                commitment,
+                pok,
+                &public_inputs,
+                vk,
+            )
+            .expect("new_with_commitment");
+            verifier.verify()
+        }
+
         #[test]
         fn bsb22_e2e_verifies() {
             let vk_owned = parse_gnark_vk_bytes(VK_BYTES).unwrap();
@@ -852,6 +914,174 @@ mod tests {
             )
             .unwrap_err();
             assert_eq!(err, Groth16Error::InvalidPublicInputsLength);
+        }
+
+        #[test]
+        fn bsb22_e2e_rejects_substituted_on_curve_commitment() {
+            let vk_owned = parse_gnark_vk_bytes(VK_BYTES).unwrap();
+            let vk = vk_owned.as_borrowed();
+
+            // The generator is on-curve, so prepare_inputs accepts it,
+            // but its BSB22 hash differs from the honest commitment's:
+            // kSum no longer matches what proof_c commits to and the
+            // main pairing rejects before the PoK check runs.
+            assert_eq!(
+                verify_with_commitment_and_pok(&G1_GENERATOR_BE, POK_BYTES, &vk),
+                Err(Groth16Error::ProofVerificationFailed)
+            );
+        }
+
+        #[test]
+        fn bsb22_e2e_rejects_substituted_on_curve_pok() {
+            let vk_owned = parse_gnark_vk_bytes(VK_BYTES).unwrap();
+            let vk = vk_owned.as_borrowed();
+
+            // Honest commitment, so prepare_inputs and the main
+            // pairing pass; the substituted PoK then fails the
+            // Pedersen knowledge-proof pairing.
+            assert_eq!(
+                verify_with_commitment_and_pok(COMMITMENT_BYTES, &G1_GENERATOR_BE, &vk),
+                Err(Groth16Error::CommitmentPokVerificationFailed)
+            );
+        }
+
+        #[test]
+        fn bsb22_e2e_rejects_swapped_commitment_and_pok() {
+            let vk_owned = parse_gnark_vk_bytes(VK_BYTES).unwrap();
+            let vk = vk_owned.as_borrowed();
+
+            // Both are valid G1 points, but hashing the PoK bytes in
+            // place of the commitment changes kSum, so the main
+            // pairing rejects before the PoK check runs.
+            assert_eq!(
+                verify_with_commitment_and_pok(POK_BYTES, COMMITMENT_BYTES, &vk),
+                Err(Groth16Error::ProofVerificationFailed)
+            );
+        }
+
+        #[test]
+        fn bsb22_e2e_rejects_identity_commitment_and_pok() {
+            let vk_owned = parse_gnark_vk_bytes(VK_BYTES).unwrap();
+            let vk = vk_owned.as_borrowed();
+
+            // All-zero bytes encode the G1 identity, which the
+            // syscalls accept, and e(0, gSigmaNeg) * e(0, g) == 1
+            // would pass the PoK check trivially (matching gnark).
+            // The proof still fails: hashing the zero commitment
+            // yields a kSum that proof_c does not commit to, so the
+            // main pairing rejects.
+            assert_eq!(
+                verify_with_commitment_and_pok(&[0u8; 64], &[0u8; 64], &vk),
+                Err(Groth16Error::ProofVerificationFailed)
+            );
+        }
+
+        #[test]
+        fn bsb22_e2e_rejects_not_on_curve_commitment() {
+            let vk_owned = parse_gnark_vk_bytes(VK_BYTES).unwrap();
+            let vk = vk_owned.as_borrowed();
+
+            // The G1 addition syscall rejects the off-curve point when
+            // prepare_inputs adds the raw commitment to kSum.
+            assert_eq!(
+                verify_with_commitment_and_pok(&NOT_ON_CURVE_G1_BE, POK_BYTES, &vk),
+                Err(Groth16Error::Bsb22InvalidCommitmentPoint)
+            );
+        }
+
+        #[test]
+        fn bsb22_e2e_rejects_not_on_curve_pok() {
+            let vk_owned = parse_gnark_vk_bytes(VK_BYTES).unwrap();
+            let vk = vk_owned.as_borrowed();
+
+            // Honest commitment, so prepare_inputs and the main
+            // pairing pass; the pairing syscall then rejects the
+            // off-curve PoK point inside the knowledge-proof check.
+            assert_eq!(
+                verify_with_commitment_and_pok(COMMITMENT_BYTES, &NOT_ON_CURVE_G1_BE, &vk),
+                Err(Groth16Error::CommitmentPokVerificationFailed)
+            );
+        }
+
+        #[test]
+        fn bsb22_e2e_rejects_public_input_greater_than_field_size() {
+            let vk_owned = parse_gnark_vk_bytes(VK_BYTES).unwrap();
+            let vk = vk_owned.as_borrowed();
+
+            let proof_a = negate_g1_be(PROOF_A_BYTES);
+            let public_inputs: [[u8; 32]; 1] =
+                [ark_bn254::Fr::MODULUS.to_bytes_be().try_into().unwrap()];
+
+            let mut verifier = Groth16Verifier::new_with_commitment(
+                &proof_a,
+                PROOF_B_BYTES,
+                PROOF_C_BYTES,
+                COMMITMENT_BYTES,
+                POK_BYTES,
+                &public_inputs,
+                &vk,
+            )
+            .expect("new_with_commitment");
+            assert_eq!(
+                verifier.verify_unchecked(),
+                Err(Groth16Error::ProofVerificationFailed)
+            );
+            assert_eq!(
+                verifier.verify(),
+                Err(Groth16Error::PublicInputGreaterThanFieldSize)
+            );
+        }
+
+        #[test]
+        fn bsb22_e2e_new_rejects_bsb22_vk() {
+            let vk_owned = parse_gnark_vk_bytes(VK_BYTES).unwrap();
+            let vk = vk_owned.as_borrowed();
+
+            let proof_a = negate_g1_be(PROOF_A_BYTES);
+            let public_inputs: [[u8; 32]; 1] = [*PUBLIC_INPUT_BYTES];
+
+            let err =
+                Groth16Verifier::new(&proof_a, PROOF_B_BYTES, PROOF_C_BYTES, &public_inputs, &vk)
+                    .unwrap_err();
+            assert_eq!(err, Groth16Error::UnexpectedCommitmentKey);
+        }
+
+        #[test]
+        fn bsb22_e2e_new_with_commitment_rejects_standard_vk() {
+            // The standard-Groth16 vk from the parent test module has
+            // no commitment key; the commitment-key check runs before
+            // the vk_ic length check, so the input count is irrelevant.
+            let proof_a = negate_g1_be(PROOF_A_BYTES);
+            let public_inputs: [[u8; 32]; 1] = [*PUBLIC_INPUT_BYTES];
+
+            let err = Groth16Verifier::new_with_commitment(
+                &proof_a,
+                PROOF_B_BYTES,
+                PROOF_C_BYTES,
+                COMMITMENT_BYTES,
+                POK_BYTES,
+                &public_inputs,
+                &VERIFYING_KEY,
+            )
+            .unwrap_err();
+            assert_eq!(err, Groth16Error::MissingCommitmentKey);
+        }
+
+        #[test]
+        fn bsb22_e2e_rejects_tampered_commitment_key() {
+            let mut vk_owned = parse_gnark_vk_bytes(VK_BYTES).unwrap();
+            let commitment_key = vk_owned.vk_commitment.as_mut().expect("commitment key");
+            // Replace GSigmaNeg with G — still a valid G2 point, so
+            // the pairing syscall accepts the input, but the Pedersen
+            // knowledge-proof equation no longer holds. The main
+            // pairing does not involve the commitment key and passes.
+            commitment_key.g_sigma_neg_g2 = commitment_key.g2;
+            let vk = vk_owned.as_borrowed();
+
+            assert_eq!(
+                verify_with_commitment_and_pok(COMMITMENT_BYTES, POK_BYTES, &vk),
+                Err(Groth16Error::CommitmentPokVerificationFailed)
+            );
         }
     }
 }
