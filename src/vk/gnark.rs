@@ -108,6 +108,12 @@ pub fn parse_gnark_vk_bytes(bytes: &[u8]) -> Result<Groth16VerifyingkeyOwned, Gr
     if nb_k == 0 {
         return Err(Groth16Error::Bsb22InvalidVerifyingKeyBinary);
     }
+    // nbK is untrusted input: prove the buffer actually holds nbK
+    // 64-byte K entries before using it as an allocation size, so a
+    // malformed blob cannot force a huge allocation.
+    if nb_k > cursor.remaining() / 64 {
+        return Err(Groth16Error::Bsb22InvalidVerifyingKeyBinary);
+    }
     let mut vk_ic = Vec::with_capacity(nb_k);
     for _ in 0..nb_k {
         vk_ic.push(cursor.take_64()?);
@@ -352,6 +358,9 @@ impl<'a> Cursor<'a> {
     fn skip(&mut self, n: usize) -> Result<(), Groth16Error> {
         self.take(n).map(|_| ())
     }
+    fn remaining(&self) -> usize {
+        self.buf.len().saturating_sub(self.pos)
+    }
     fn take_64(&mut self) -> Result<[u8; 64], Groth16Error> {
         let s = self.take(64)?;
         let mut out = [0u8; 64];
@@ -419,6 +428,17 @@ mod tests {
         // the last commitment key indicate corruption.
         let mut bytes = VK_BYTES.to_vec();
         bytes.push(0xab);
+        let err = parse_gnark_vk_bytes(&bytes).unwrap_err();
+        assert_eq!(err, Groth16Error::Bsb22InvalidVerifyingKeyBinary);
+    }
+
+    #[test]
+    fn rejects_oversized_nb_k_without_allocating() {
+        // nbK = u32::MAX with no K entries behind it: the parser must
+        // reject on the remaining-bytes check instead of attempting a
+        // u32::MAX * 64-byte allocation.
+        let mut bytes = vec![0u8; 576]; // alpha/beta/gamma/delta heads (zeroed)
+        bytes.extend_from_slice(&u32::MAX.to_be_bytes()); // nbK -- REJECT
         let err = parse_gnark_vk_bytes(&bytes).unwrap_err();
         assert_eq!(err, Groth16Error::Bsb22InvalidVerifyingKeyBinary);
     }
