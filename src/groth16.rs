@@ -67,10 +67,8 @@ pub struct Groth16Verifier<'a, const NR_INPUTS: usize> {
     verifyingkey: &'a Groth16Verifyingkey<'a>,
 
     /// `proof.Commitments[0]` — the single BSB22 Pedersen commitment.
-    #[cfg(feature = "bsb22")]
     proof_commitment: Option<&'a [u8; 64]>,
     /// `proof.CommitmentPok` — the Pedersen knowledge proof.
-    #[cfg(feature = "bsb22")]
     proof_commitment_pok: Option<&'a [u8; 64]>,
 }
 
@@ -130,9 +128,7 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
             public_inputs,
             prepared_public_inputs: [0u8; 64],
             verifyingkey,
-            #[cfg(feature = "bsb22")]
             proof_commitment: None,
-            #[cfg(feature = "bsb22")]
             proof_commitment_pok: None,
         })
     }
@@ -187,8 +183,11 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
             if CHECK && !is_less_than_bn254_field_size_be(input) {
                 return Err(Groth16Error::PublicInputGreaterThanFieldSize);
             }
-            prepared_public_inputs =
-                g1_mul_add(&self.verifyingkey.vk_ic[i + 1], input, &prepared_public_inputs)?;
+            prepared_public_inputs = g1_mul_add(
+                &self.verifyingkey.vk_ic[i + 1],
+                input,
+                &prepared_public_inputs,
+            )?;
         }
 
         // BSB22 extension: when the proof includes a Pedersen
@@ -210,14 +209,17 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
             // 1. Hash the commitment to a field element using gnark's
             //    DST "bsb22-commitment" (constraint/commitment.go:7).
             let commitment_hash_fe =
-                crate::hash_to_field::hash_to_field_bn254_fr(&commitment[..], b"bsb22-commitment")?;
+                crate::hash_to_field::hash_to_field_bn254_fr(commitment, b"bsb22-commitment");
 
             // 2. Multiply by the trailing K column (vk_ic[NR_INPUTS + 1])
             //    that gnark appended for the commitment-derived hash
             //    wire, and add to the running kSum.
             let commitment_hash_ic = &self.verifyingkey.vk_ic[NR_INPUTS + 1];
-            prepared_public_inputs =
-                g1_mul_add(commitment_hash_ic, &commitment_hash_fe, &prepared_public_inputs)?;
+            prepared_public_inputs = g1_mul_add(
+                commitment_hash_ic,
+                &commitment_hash_fe,
+                &prepared_public_inputs,
+            )?;
 
             // 3. Add the raw commitment G1 point itself to kSum
             //    (verify.go:113-115). The commitment is prover-supplied
@@ -290,28 +292,32 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
     /// `new_with_commitment`, which requires the vk commitment key) or
     /// all-None (from `new`, which rejects vks that contain one). The
     /// fields are private and the constructors are the only writers,
-    /// so a mixed state is unreachable; the if-let matches the
-    /// all-Some case and makes the standard-Groth16 case a no-op.
+    /// but rather than trust that non-local invariant the match fails
+    /// closed: a mixed state returns an error instead of silently
+    /// skipping the PoK check.
     #[cfg(feature = "bsb22")]
     fn verify_commitment_pok(&self) -> Result<(), Groth16Error> {
-        if let (Some(commitment), Some(pok), Some(commitment_key)) = (
+        match (
             self.proof_commitment,
             self.proof_commitment_pok,
             self.verifyingkey.vk_commitment.as_ref(),
         ) {
-            let mut pok_input = [0u8; 384];
-            pok_input[0..64].copy_from_slice(commitment);
-            pok_input[64..192].copy_from_slice(&commitment_key.g_sigma_neg_g2);
-            pok_input[192..256].copy_from_slice(pok);
-            pok_input[256..384].copy_from_slice(&commitment_key.g2);
-            let pok_res = pairing_be(&pok_input)
-                .map_err(|_| Groth16Error::CommitmentPokVerificationFailed)?;
-            if pok_res[31] != 1 {
-                return Err(Groth16Error::CommitmentPokVerificationFailed);
+            (Some(commitment), Some(pok), Some(commitment_key)) => {
+                let mut pok_input = [0u8; 384];
+                pok_input[0..64].copy_from_slice(commitment);
+                pok_input[64..192].copy_from_slice(&commitment_key.g_sigma_neg_g2);
+                pok_input[192..256].copy_from_slice(pok);
+                pok_input[256..384].copy_from_slice(&commitment_key.g2);
+                let pok_res = pairing_be(&pok_input)
+                    .map_err(|_| Groth16Error::CommitmentPokVerificationFailed)?;
+                if pok_res[31] != 1 {
+                    return Err(Groth16Error::CommitmentPokVerificationFailed);
+                }
+                Ok(())
             }
+            (None, None, None) => Ok(()),
+            _ => Err(Groth16Error::Bsb22InconsistentCommitmentState),
         }
-
-        Ok(())
     }
 }
 

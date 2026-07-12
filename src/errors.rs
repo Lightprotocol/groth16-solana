@@ -64,6 +64,14 @@ pub enum Groth16Error {
     #[cfg(feature = "bsb22")]
     #[error("Bsb22InvalidCommitmentPoint")]
     Bsb22InvalidCommitmentPoint,
+    /// The verifier holds a partial BSB22 state: commitment, PoK, and
+    /// vk commitment key must all be present or all be absent. The
+    /// constructors enforce this, so hitting it means an internal
+    /// invariant was broken; the check fails closed rather than
+    /// skipping the PoK verification.
+    #[cfg(feature = "bsb22")]
+    #[error("Bsb22InconsistentCommitmentState")]
+    Bsb22InconsistentCommitmentState,
 }
 
 #[cfg(feature = "circom")]
@@ -108,6 +116,8 @@ impl From<Groth16Error> for u32 {
             Groth16Error::Bsb22VkFileIoFailed => 19,
             #[cfg(feature = "bsb22")]
             Groth16Error::Bsb22InvalidCommitmentPoint => 20,
+            #[cfg(feature = "bsb22")]
+            Groth16Error::Bsb22InconsistentCommitmentState => 21,
         }
     }
 }
