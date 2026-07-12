@@ -11,7 +11,11 @@
 //!     cargo test -p bsb22-integration-program --test bench_cu -- --ignored --nocapture
 //!
 //! `#[ignore]` keeps the bench out of plain `cargo test` runs, which
-//! execute against the unprofiled .so the litesvm tests need.
+//! do not build the profiled .so first.
+//!
+//! CU regression check: CI reruns this bench and fails on any
+//! uncommitted BENCHMARKS.md diff, so cost changes must be
+//! re-baselined by committing the regenerated file.
 
 use bsb22_integration_program::bench_fixtures::{build_ix_data, fixtures, PROGRAM_ID_BYTES};
 use light_program_profiler::{

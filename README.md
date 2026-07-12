@@ -150,19 +150,14 @@ cargo build-sbf --manifest-path tests/program/Cargo.toml -- --features profile-p
 cargo test -p bsb22-integration-program --test bench_cu -- --ignored --nocapture
 ```
 
-The order matters: `cargo test-sbf` (and plain `cargo build-sbf`)
-produce an unprofiled `.so`, which is what the litesvm sanity tests
-in `tests/program/tests/litesvm_cu.rs` expect:
+The order matters: `cargo test-sbf` and plain `cargo build-sbf`
+produce an unprofiled `.so`; the bench needs the `profile-program`
+build.
 
-```sh
-cargo build-sbf --manifest-path tests/program/Cargo.toml
-cargo test -p bsb22-integration-program --test litesvm_cu -- --nocapture
-```
-
-Those tests re-verify every variant end to end on litesvm and assert
-a per-variant CU envelope of last-measured + ~10% (see the fixture
-table in `tests/program/src/lib.rs`), so a regression of more
-than ~10% on any variant fails CI.
+CU regression tracking: the fixtures and the mollusk runtime are
+deterministic, so CI reruns the bench and fails on any uncommitted
+BENCHMARKS.md diff. A cost change therefore has to be re-baselined
+consciously by committing the regenerated file.
 
 ## Audit
 The groth16_solana release 0.0.1 has been audited during the Light Protocol v3 audit. Check out the report [here](https://file.notion.so/f/f/3e18f32c-2f42-4786-8870-c571eb0af77e/ebf1b371-2456-4127-b419-1a9812108368/Light_Protocol_V3_Audit_Report.pdf?id=2169256e-e998-4d50-a922-4602a20fe65b&table=block&spaceId=3e18f32c-2f42-4786-8870-c571eb0af77e&expirationTimestamp=1722110400000&signature=Q4NG6VMKx8UqG-xze7eKwdYGINTlIoC7-TI49wGJGSU&downloadName=Light+Protocol+V3+Audit+Report.pdf). 

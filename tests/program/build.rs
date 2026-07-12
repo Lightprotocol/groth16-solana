@@ -30,9 +30,7 @@ fn main() {
     // Confirm the Go toolchain exists. Without it the build fails
     // loudly with a clear message instead of a confusing exec error.
     if Command::new("go").arg("version").status().is_err() {
-        println!(
-            "cargo:warning=`go` not found in PATH; tests/program requires the Go toolchain"
-        );
+        println!("cargo:warning=`go` not found in PATH; tests/program requires the Go toolchain");
         panic!("missing Go toolchain");
     }
 

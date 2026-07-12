@@ -47,9 +47,6 @@ jobs:
           sh -c "$(curl -sSfL https://release.anza.xyz/${SOLANA_VERSION}/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
 
-      - name: Build SBF program (bsb22 litesvm test loads this .so)
-        run: cargo build-sbf --manifest-path tests/program/Cargo.toml
-
       - name: Build workspace
         run: cargo build --workspace
 
@@ -60,3 +57,14 @@ jobs:
         run: cargo test --workspace
         env:
           PROPTEST_CASES: "1000000"
+
+      - name: Regenerate BENCHMARKS.md (profiled build + mollusk bench)
+        run: |
+          cargo build-sbf --manifest-path tests/program/Cargo.toml -- --features profile-program
+          cargo test -p bsb22-integration-program --test bench_cu -- --ignored --nocapture
+
+      - name: Fail on uncommitted BENCHMARKS.md changes
+        # The bench fixtures and mollusk runtime are deterministic, so
+        # any diff here is a real CU change that must be re-baselined
+        # by committing the regenerated BENCHMARKS.md.
+        run: git diff --exit-code BENCHMARKS.md
