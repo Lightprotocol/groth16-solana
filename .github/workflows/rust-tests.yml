@@ -18,9 +18,10 @@ env:
   NODE_VERSION: "22"
   CIRCOM_VERSION: "v2.2.2"
   # Pinned, not "stable": the BENCHMARKS.md CU baselines depend on
-  # platform-tools codegen, so a toolchain bump changes CU counts and
-  # must land together with a re-baselined BENCHMARKS.md.
-  SOLANA_VERSION: "v3.1.15"
+  # platform-tools codegen (v3.1.14 pins platform-tools v1.52), so a
+  # toolchain bump changes CU counts and must land together with a
+  # re-baselined BENCHMARKS.md.
+  SOLANA_VERSION: "v3.1.14"
 
 jobs:
   test-rust:
