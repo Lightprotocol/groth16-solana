@@ -1,8 +1,6 @@
 // Build the in-repo gnark fixture (`gnark-fixture/`) as a C static
 // archive via cgo, then run bindgen over the generated header so the
 // integration tests can call Setup / Prove / NativeVerify directly.
-//
-// Modeled on bsb22-minimal/ffi/build.rs.
 
 use std::{env, path::PathBuf, process::Command};
 
@@ -20,7 +18,7 @@ fn main() {
     // Confirm the Go toolchain exists. Without it the build fails
     // loudly with a clear message instead of a confusing linker error.
     if Command::new("go").arg("version").status().is_err() {
-        println!("cargo:warning=`go` not found in PATH; tests/bsb22 requires the Go toolchain");
+        println!("cargo:warning=`go` not found in PATH; tests/gnark-ffi requires the Go toolchain");
         panic!("missing Go toolchain");
     }
 
@@ -47,6 +45,7 @@ fn main() {
         .allowlist_function("Setup")
         .allowlist_function("Prove")
         .allowlist_function("NativeVerify")
+        .allowlist_function("HashToField")
         .allowlist_function("FreeProveResult")
         .allowlist_function("FreeString")
         .allowlist_type("C_ProveResult")

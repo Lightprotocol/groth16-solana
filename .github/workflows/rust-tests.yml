@@ -17,7 +17,11 @@ env:
   RUST_TOOLCHAIN: "1.90.0"
   NODE_VERSION: "22"
   CIRCOM_VERSION: "v2.2.2"
-  SOLANA_VERSION: "stable"
+  # Pinned, not "stable": the BENCHMARKS.md CU baselines depend on
+  # platform-tools codegen (v3.1.14 pins platform-tools v1.52), so a
+  # toolchain bump changes CU counts and must land together with a
+  # re-baselined BENCHMARKS.md.
+  SOLANA_VERSION: "v3.1.14"
 
 jobs:
   test-rust:
@@ -33,13 +37,11 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           circom-version: ${{ env.CIRCOM_VERSION }}
 
-      - name: Install npm dependencies (for circuit compilation)
-        working-directory: tests/rust-vk
-        run: npm install
-
-      - name: Compile circuit and generate keys
-        working-directory: tests/rust-vk
-        run: npm run build-all
+      - name: Install nightly toolchain (for the no_std check)
+        # `just check-nostd` compiles the crate for a solana-os BPF
+        # target against a core+alloc-only sysroot; build-std needs
+        # nightly and the rust-src component.
+        run: rustup toolchain install nightly --profile minimal --component rust-src
 
       - name: Install Solana toolchain (for cargo build-sbf)
         shell: bash
@@ -47,11 +49,13 @@ jobs:
           sh -c "$(curl -sSfL https://release.anza.xyz/${SOLANA_VERSION}/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
 
-      - name: Build SBF program (bsb22 litesvm test loads this .so)
-        run: cargo build-sbf --manifest-path tests/bsb22-program/Cargo.toml
+      - name: Install just
+        uses: extractions/setup-just@v2
 
-      - name: Build workspace
-        run: cargo build --workspace
-
-      - name: Test workspace
-        run: cargo test --workspace
+      - name: Build, test, bench (just ci)
+        # Circuit build, workspace build, profiled SBF build, workspace
+        # + all-features tests, BENCHMARKS.md regeneration and diff
+        # check -- see the `ci` recipe in the justfile.
+        run: just ci
+        env:
+          PROPTEST_CASES: "1000000"

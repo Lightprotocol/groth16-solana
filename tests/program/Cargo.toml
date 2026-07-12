@@ -1,0 +1,66 @@
+[package]
+name = "bsb22-integration-program"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# Tiny Solana program that verifies Groth16 proofs inside an
+# instruction, in every benchmark shape: plain Groth16 and BSB22
+# (one Pedersen commitment), each with 1/2/4/8 public inputs. Exists
+# so we can run `cargo build-sbf` and load the resulting .so into
+# mollusk for per-function CU profiling via light-program-profiler.
+# The bench regenerates BENCHMARKS.md; CI fails on uncommitted
+# BENCHMARKS.md diffs, so CU changes must be re-baselined.
+#
+# The verifying keys are baked into `.rodata` at build time. build.rs
+# regenerates the (vk, proof) fixture sets deterministically via
+# `go run ./cmd/benchgen` in tests/gnark-ffi/gnark-fixture — requires the
+# Go toolchain, like tests/gnark-ffi.
+#
+# CU benchmark workflow (profiled build, see BENCHMARKS.md):
+#   cargo build-sbf --manifest-path tests/program/Cargo.toml -- --features profile-program
+#   cargo test      --manifest-path tests/program/Cargo.toml --test bench_cu -- --ignored --nocapture
+
+[lints.rust.unexpected_cfgs]
+level = "warn"
+# profile-heap: emitted by the #[profile] macro expansion; the
+# feature itself is never enabled here.
+check-cfg = [
+    "cfg(target_os, values(\"solana\"))",
+    "cfg(feature, values(\"custom-heap\", \"custom-panic\", \"profile-heap\"))",
+]
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[features]
+# Instrument #[profile] functions with the profiler's custom syscalls.
+# Only mollusk (bench_cu.rs) registers those syscalls — a .so built
+# with this feature aborts under litesvm/validators.
+profile-program = ["light-program-profiler/profile-program"]
+
+[dependencies]
+groth16-solana = { path = "../..", features = ["bsb22"] }
+solana-program = "2.2"
+light-program-profiler = { git = "https://github.com/Lightprotocol/light-program-profiler", rev = "862df52dd8c6099c11f795553514c654f3c2c459" }
+# Force the blake3 workspace pin so the constant_time_eq chain
+# stays on 0.3.x. Declared here even though we don't use blake3
+# directly because cargo's workspace unification only kicks in when
+# a member crate pulls it in.
+blake3 = { workspace = true }
+
+[build-dependencies]
+# gnark-vk: build.rs only parses vks and generates consts; the
+# runtime dependency above carries the bsb22 verifier feature.
+groth16-solana = { path = "../..", features = ["gnark-vk"] }
+
+[dev-dependencies]
+# Mollusk CU-profiling harness (bench_cu.rs). Mollusk 0.3 is built on
+# the solana 2.x crates, so its instruction/account/pubkey types are
+# pulled in renamed.
+mollusk-svm = "0.3.0"
+light-program-profiler = { git = "https://github.com/Lightprotocol/light-program-profiler", rev = "862df52dd8c6099c11f795553514c654f3c2c459", features = ["mollusk"] }
+mollusk-solana-account = { package = "solana-account", version = "2.2" }
+mollusk-solana-instruction = { package = "solana-instruction", version = "2.2" }
+mollusk-solana-program-error = { package = "solana-program-error", version = "2.2" }
+mollusk-solana-pubkey = { package = "solana-pubkey", version = "2.2" }

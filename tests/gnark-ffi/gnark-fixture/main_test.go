@@ -5,18 +5,16 @@ package main
 // tests in the parent crate -- if gnark's own verifier rejects the
 // proof here, no Rust port will succeed.
 //
-// Run with:  go test ./tests/bsb22/gnark-fixture/
+// Run with:  go test ./tests/gnark-ffi/gnark-fixture/
 
 import (
 	"fmt"
 	"math/big"
-	"os"
 	"testing"
 
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/hash_to_field"
 	"github.com/consensys/gnark/backend/groth16"
-	groth16_bn254 "github.com/consensys/gnark/backend/groth16/bn254"
 	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
@@ -41,7 +39,7 @@ func runVariant(t *testing.T, v int) {
 		t.Fatalf("compile: %v", err)
 	}
 
-	// Confirm task 1's empty-committed_wires invariant: every variant
+	// Confirm the empty-committed_wires invariant: every variant
 	// must have exactly one commitment with no public-committed wires.
 	commitments, ok := cs.GetCommitments().(constraint.Groth16Commitments)
 	if !ok {
@@ -83,95 +81,10 @@ func runVariant(t *testing.T, v int) {
 	}
 }
 
-// castProofForFixture extracts (Ar, Bs, Krs, Commitments[0],
-// CommitmentPok) raw bytes from a *groth16.Proof. Mirrors what
-// main.go's Prove cgo entry does, but returns Go []byte slices for
-// use in test logging.
-func castProofForFixture(t *testing.T, proof groth16.Proof) [][]byte {
-	t.Helper()
-	bnProof, ok := proof.(*groth16_bn254.Proof)
-	if !ok {
-		t.Fatalf("unexpected proof type %T", proof)
-	}
-	if len(bnProof.Commitments) != 1 {
-		t.Fatalf("expected 1 commitment, got %d", len(bnProof.Commitments))
-	}
-	ar := bnProof.Ar.RawBytes()
-	bs := bnProof.Bs.RawBytes()
-	krs := bnProof.Krs.RawBytes()
-	cmt := bnProof.Commitments[0].RawBytes()
-	pok := bnProof.CommitmentPok.RawBytes()
-	return [][]byte{ar[:], bs[:128], krs[:], cmt[:], pok[:]}
-}
-
-// TestDumpFullFixture writes a matching (vk.bin, proof bytes,
-// public input) tuple for variant 1 with X=7 so we can bake the
-// triple into the lib-internal end-to-end unit test (task 8).
-// gnark setup is non-deterministic so vk and proof MUST come from
-// the same Setup call.
-func TestDumpFullFixture(t *testing.T) {
-	circuit, err := newCircuit(1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, circuit)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pk, vk, err := groth16.Setup(cs)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dir := t.TempDir()
-	if err := writeVerifyingKey(vk, dir+"/vk.bin"); err != nil {
-		t.Fatal(err)
-	}
-	vkBytes, err := os.ReadFile(dir + "/vk.bin")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	x := big.NewInt(7)
-	y := new(big.Int).Mul(x, x)
-	assignment, err := newAssignment(1, x, y)
-	if err != nil {
-		t.Fatal(err)
-	}
-	w, err := frontend.NewWitness(assignment, ecc.BN254.ScalarField())
-	if err != nil {
-		t.Fatal(err)
-	}
-	proof, err := groth16.Prove(cs, pk, w)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pubW, err := w.Public()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := groth16.Verify(proof, vk, pubW); err != nil {
-		t.Fatal(err)
-	}
-
-	// Cast to BN254 concrete type to access RawBytes() on each
-	// element directly, the same way main.go's Prove cgo entry does.
-	bnProof := castProofForFixture(t, proof)
-	ar := bnProof[0]
-	bs := bnProof[1]
-	krs := bnProof[2]
-	cmt := bnProof[3]
-	pok := bnProof[4]
-	xBytes := x.FillBytes(make([]byte, 32))
-
-	t.Logf("VK_HEX            (%d bytes): %x", len(vkBytes), vkBytes)
-	t.Logf("PROOF_A_HEX       (64 bytes): %x", ar)
-	t.Logf("PROOF_B_HEX       (128 bytes): %x", bs)
-	t.Logf("PROOF_C_HEX       (64 bytes): %x", krs)
-	t.Logf("COMMITMENT_HEX    (64 bytes): %x", cmt)
-	t.Logf("POK_HEX           (64 bytes): %x", pok)
-	t.Logf("PUBLIC_INPUT_HEX  (32 bytes): %x", xBytes)
-}
+// The golden bytes for the lib-internal Rust unit tests
+// (tests/gnark-ffi/test_fixtures.rs) come from the deterministic generator:
+// `go run ./cmd/benchgen <dir>` (bsb22_1 fixture set), not from a
+// test in this file — see the bench package for the seeding scheme.
 
 // TestHashToFieldGoldenVectors prints the gnark BSB22 hash-to-field
 // outputs for a few fixed messages so we can paste them into the

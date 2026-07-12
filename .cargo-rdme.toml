@@ -1,0 +1,8 @@
+# README.md is generated from the src/lib.rs crate docs: `just readme`
+# regenerates it, `just check-readme` (part of `just lint` and CI) fails
+# on drift. Intralink resolution is disabled because it requires a
+# pinned nightly toolchain and the docs use plain markdown links only.
+heading-base-level = 1
+
+[intralinks]
+strip-links = true

@@ -46,9 +46,17 @@ pub mod circom_prover {
     /// # Errors
     ///
     /// Returns an error if serialization fails or byte conversion fails
+    /// (proof_a, proof_b, proof_c) in groth16-solana's uncompressed
+    /// big-endian byte format.
+    pub type ProofBytes = ([u8; 64], [u8; 128], [u8; 64]);
+
+    /// (proof_a, proof_b, proof_c) compressed, one coordinate per
+    /// point.
+    pub type CompressedProofBytes = ([u8; 32], [u8; 64], [u8; 32]);
+
     pub fn convert_proof(
         circom_proof: &::circom_prover::prover::circom::Proof,
-    ) -> Result<([u8; 64], [u8; 128], [u8; 64]), Groth16Error> {
+    ) -> Result<ProofBytes, Groth16Error> {
         // Convert to arkworks proof
         let ark_proof: ark_groth16::Proof<ark_bn254::Bn254> = circom_proof.clone().into();
 
@@ -126,7 +134,7 @@ pub mod circom_prover {
         proof_a: &[u8; 64],
         proof_b: &[u8; 128],
         proof_c: &[u8; 64],
-    ) -> Result<([u8; 32], [u8; 64], [u8; 32]), Groth16Error> {
+    ) -> Result<CompressedProofBytes, Groth16Error> {
         use solana_bn254::compression::prelude::{
             alt_bn128_g1_compress_be, alt_bn128_g2_compress_be,
         };

@@ -1,8 +1,8 @@
 //! Integration tests for the circom/snarkjs vk codegen
-//! (`groth16_solana::vk::circom`): the generated const must carry the
+//! (`groth16_solana::vk::circom`): the generated const must include the
 //! un-gated `vk_commitment` field, and malformed JSON must produce
 //! meaningful `VkParseError`s instead of integer-underflow panics.
-#![cfg(feature = "vk")]
+#![cfg(feature = "circom-vk")]
 
 use groth16_solana::vk::circom::parse_vk_json_to_rust_string;
 
@@ -39,5 +39,9 @@ fn rejects_empty_point_coordinates() {
     let json = MINIMAL_VK_JSON.replace(r#""vk_alpha_1": ["1", "2", "1"]"#, r#""vk_alpha_1": []"#);
     let err = parse_vk_json_to_rust_string(&json).unwrap_err();
     let msg = format!("{}", err);
-    assert!(msg.contains("vk_alpha_1 is empty"), "unexpected error: {}", msg);
+    assert!(
+        msg.contains("vk_alpha_1 is empty"),
+        "unexpected error: {}",
+        msg
+    );
 }

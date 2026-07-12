@@ -15,5 +15,5 @@ light-hasher = { version = "4.0.0", features = ["solana"] }
 light-merkle-tree-reference = "3.0.0"
 
 [build-dependencies]
-groth16-solana = { path = "../..", features = ["vk", "circom"] }
+groth16-solana = { path = "../..", features = ["circom-vk", "circom"] }
 rust-witness = "0.1"

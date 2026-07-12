@@ -31,13 +31,10 @@ pub enum Groth16Error {
     #[cfg(feature = "bsb22")]
     #[error("CommitmentPokVerificationFailed")]
     CommitmentPokVerificationFailed,
-    #[cfg(feature = "bsb22")]
-    #[error("Bsb22HashToFieldFailed")]
-    Bsb22HashToFieldFailed,
-    #[cfg(feature = "bsb22")]
+    #[cfg(feature = "gnark-vk")]
     #[error("Bsb22UnsupportedMultiCommitment")]
     Bsb22UnsupportedMultiCommitment,
-    #[cfg(feature = "bsb22")]
+    #[cfg(feature = "gnark-vk")]
     #[error("Bsb22InvalidVerifyingKeyBinary")]
     Bsb22InvalidVerifyingKeyBinary,
     /// The verifying key contains a BSB22 Pedersen commitment key but
@@ -50,13 +47,13 @@ pub enum Groth16Error {
     /// (`PublicAndCommitmentCommitted` has a non-empty entry), which
     /// this verifier's BSB22 hash preimage does not support — only
     /// commitments over private wires (e.g. `logderivlookup`) work.
-    #[cfg(feature = "bsb22")]
+    #[cfg(feature = "gnark-vk")]
     #[error("Bsb22CommittedPublicInputsUnsupported")]
     Bsb22CommittedPublicInputsUnsupported,
     /// Reading the vk.bin or writing the generated Rust file failed in
     /// `generate_bsb22_vk_file` — a filesystem problem (wrong path,
     /// permissions), not a malformed verifying key.
-    #[cfg(feature = "bsb22")]
+    #[cfg(feature = "gnark-vk")]
     #[error("Bsb22VkFileIoFailed")]
     Bsb22VkFileIoFailed,
     /// The proof's BSB22 commitment bytes do not encode a valid BN254
@@ -64,6 +61,16 @@ pub enum Groth16Error {
     #[cfg(feature = "bsb22")]
     #[error("Bsb22InvalidCommitmentPoint")]
     Bsb22InvalidCommitmentPoint,
+    /// The verifier holds a partial BSB22 state: commitment, PoK, and
+    /// vk commitment key must all be present or all be absent. The
+    /// constructors enforce this, so hitting it means an internal
+    /// invariant was broken; both `prepare_inputs` (commitment vs vk
+    /// key) and `verify_commitment_pok` fail closed on a mixed state
+    /// rather than silently dropping the commitment wire or the PoK
+    /// check.
+    #[cfg(feature = "bsb22")]
+    #[error("Bsb22InconsistentCommitmentState")]
+    Bsb22InconsistentCommitmentState,
 }
 
 #[cfg(feature = "circom")]
@@ -75,10 +82,11 @@ impl From<ark_serialize::SerializationError> for Groth16Error {
 
 impl From<Groth16Error> for u32 {
     fn from(error: Groth16Error) -> Self {
-        // Codes 0, 4, and 5 belonged to variants that were never
+        // Codes 0, 4, 5, and 14 belonged to variants that were never
         // constructed and were removed (IncompatibleVerifyingKeyWith-
-        // NrPublicInputs, InvalidG1Length, InvalidG2Length); they stay
-        // unassigned so historical error codes keep their meaning.
+        // NrPublicInputs, InvalidG1Length, InvalidG2Length,
+        // Bsb22HashToFieldFailed); they stay unassigned so historical
+        // error codes keep their meaning.
         match error {
             Groth16Error::ProofVerificationFailed => 1,
             Groth16Error::PreparingInputsG1AdditionFailed => 2,
@@ -95,19 +103,19 @@ impl From<Groth16Error> for u32 {
             Groth16Error::MissingCommitmentKey => 12,
             #[cfg(feature = "bsb22")]
             Groth16Error::CommitmentPokVerificationFailed => 13,
-            #[cfg(feature = "bsb22")]
-            Groth16Error::Bsb22HashToFieldFailed => 14,
-            #[cfg(feature = "bsb22")]
+            #[cfg(feature = "gnark-vk")]
             Groth16Error::Bsb22UnsupportedMultiCommitment => 15,
-            #[cfg(feature = "bsb22")]
+            #[cfg(feature = "gnark-vk")]
             Groth16Error::Bsb22InvalidVerifyingKeyBinary => 16,
             Groth16Error::UnexpectedCommitmentKey => 17,
-            #[cfg(feature = "bsb22")]
+            #[cfg(feature = "gnark-vk")]
             Groth16Error::Bsb22CommittedPublicInputsUnsupported => 18,
-            #[cfg(feature = "bsb22")]
+            #[cfg(feature = "gnark-vk")]
             Groth16Error::Bsb22VkFileIoFailed => 19,
             #[cfg(feature = "bsb22")]
             Groth16Error::Bsb22InvalidCommitmentPoint => 20,
+            #[cfg(feature = "bsb22")]
+            Groth16Error::Bsb22InconsistentCommitmentState => 21,
         }
     }
 }

@@ -22,6 +22,8 @@ runs:
       uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         toolchain: ${{ inputs.rust-toolchain }}
+        # rustfmt and clippy back the `just lint` step.
+        components: rustfmt, clippy
 
     - name: Setup Node.js
       uses: actions/setup-node@v4
