@@ -8,12 +8,16 @@
 //!    (16 + 32 — the BN254 Fr modulus is 254 bits, plus a 128-bit
 //!    security margin).
 //! 2. Interpret the 48-byte output as a big-endian integer and reduce
-//!    mod r via `ark_bn254::Fr::from_le_bytes_mod_order` (over the
-//!    reversed buffer — the BE wrapper heap-allocates, the LE path
-//!    does not).
+//!    mod r as two 24-byte halves, `high * 2^192 + low`.
 //!
 //! gnark's `fr.Hash(msg, dst, 1)` returns the resulting field element
 //! marshalled as 32 big-endian bytes; we return the same.
+//!
+//! Halving is a cost choice, not a semantic one.
+//! `from_le_bytes_mod_order` converts only the leading
+//! `modulus_bytes - 1` bytes directly and folds every remaining byte
+//! through a field multiply and add. A half stays under that limit and
+//! skips the loop.
 //!
 //! The implementation is **allocation-free**: the three SHA-256
 //! preimage buffers used inside `expand_message_xmd` are
@@ -28,7 +32,7 @@
 
 use crate::syscalls::sha256;
 use ark_bn254::Fr;
-use ark_ff::PrimeField;
+use ark_ff::{MontFp, PrimeField};
 
 /// SHA-256 output size in bytes.
 const B_IN_BYTES: usize = 32;
@@ -36,6 +40,12 @@ const B_IN_BYTES: usize = 32;
 const R_IN_BYTES: usize = 64;
 /// Per-element output length: 16-byte security margin + 32-byte modulus.
 const L: usize = 48;
+/// Must stay under the modulus byte width so a half skips the
+/// byte-at-a-time window loop in `from_le_bytes_mod_order`.
+const HALF_L: usize = L / 2;
+/// `2^(8 * HALF_L)`. Pinned against `HALF_L` by
+/// `high_half_weight_matches_half_l_shift`.
+const HIGH_HALF_WEIGHT: Fr = MontFp!("6277101735386680763835789423207666416102355444464034512896");
 /// Upper bound on the `expand_message_xmd` preimage buffer size. Big
 /// enough for any BSB22 call: `z_pad (64) + msg + l_i_b_str (2) +
 /// 0x00 (1) + dst_prime (dst + 1)` with `msg <= ~150` bytes and `dst
@@ -132,12 +142,18 @@ pub fn hash_to_field_bn254_fr<const MSG_LEN: usize, const DST_LEN: usize>(
     msg: &[u8; MSG_LEN],
     dst: &[u8; DST_LEN],
 ) -> [u8; 32] {
-    let mut raw = expand_message_xmd_sha256_l48(msg, dst);
-    // ark's `from_be_bytes_mod_order` copies its input to a heap Vec
-    // just to reverse it; reverse the stack buffer in place and take
-    // the LE path, which is allocation-free.
-    raw.reverse();
-    let fr_elem = Fr::from_le_bytes_mod_order(&raw);
+    let raw = expand_message_xmd_sha256_l48(msg, dst);
+    // `raw` is big-endian, so `raw[..HALF_L]` is the high half. ark's
+    // `from_be_bytes_mod_order` heap-allocates to reverse, so reverse
+    // each half on the stack and take the LE path.
+    let mut high = [0u8; HALF_L];
+    let mut low = [0u8; HALF_L];
+    high.copy_from_slice(&raw[..HALF_L]);
+    low.copy_from_slice(&raw[HALF_L..]);
+    high.reverse();
+    low.reverse();
+    let fr_elem =
+        Fr::from_le_bytes_mod_order(&high) * HIGH_HALF_WEIGHT + Fr::from_le_bytes_mod_order(&low);
     // `BigInt::to_bytes_be` returns a Vec; serialize the four
     // little-endian u64 limbs to big-endian bytes on the stack instead.
     let limbs = fr_elem.into_bigint().0;
@@ -354,6 +370,55 @@ mod tests {
 
     expander_shape_proptest!(prop_expander_bsb22_shape, 64, 16);
     expander_shape_proptest!(prop_expander_max_msg, 187, 1);
+
+    /// A half must stay under arkworks' direct-conversion limit.
+    #[test]
+    fn half_stays_under_the_direct_conversion_limit() {
+        let modulus_bytes = Fr::MODULUS_BIT_SIZE.div_ceil(8) as usize;
+        assert!(HALF_L < modulus_bytes);
+    }
+
+    /// A decimal literal, so pin it to the shift it stands for.
+    #[test]
+    fn high_half_weight_matches_half_l_shift() {
+        let mut shift = [0u8; HALF_L + 1];
+        shift[HALF_L] = 1;
+        assert_eq!(HIGH_HALF_WEIGHT, Fr::from_le_bytes_mod_order(&shift));
+    }
+
+    /// Oracle for the halved form: reduce the whole buffer at once.
+    fn reduce_single_buffer(raw: &[u8; L]) -> Fr {
+        let mut le = *raw;
+        le.reverse();
+        Fr::from_le_bytes_mod_order(&le)
+    }
+
+    fn reduce_halved(raw: &[u8; L]) -> Fr {
+        let mut high = [0u8; HALF_L];
+        let mut low = [0u8; HALF_L];
+        high.copy_from_slice(&raw[..HALF_L]);
+        low.copy_from_slice(&raw[HALF_L..]);
+        high.reverse();
+        low.reverse();
+        Fr::from_le_bytes_mod_order(&high) * HIGH_HALF_WEIGHT + Fr::from_le_bytes_mod_order(&low)
+    }
+
+    // A wrong weight or a swapped half shows up here.
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(proptest_cases()))]
+        #[test]
+        fn prop_halved_reduction_matches_single_buffer(raw in any::<[u8; L]>()) {
+            prop_assert_eq!(reduce_halved(&raw), reduce_single_buffer(&raw));
+        }
+    }
+
+    /// All-ones reduces furthest.
+    #[test]
+    fn halved_reduction_matches_single_buffer_at_bounds() {
+        for raw in [[0u8; L], [0xffu8; L]] {
+            assert_eq!(reduce_halved(&raw), reduce_single_buffer(&raw));
+        }
+    }
 
     fn hex_to_vec(s: &str) -> Vec<u8> {
         assert!(s.len().is_multiple_of(2));
