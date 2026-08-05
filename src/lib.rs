@@ -1,7 +1,7 @@
 //! Groth16 zero-knowledge proof verification with Solana alt_bn128 syscalls.
 //!
 //! A plain Groth16 verify costs 78,293–108,762 CU and a BSB22 verify
-//! 211,461–241,985 CU, for 1 to 8 public inputs (see
+//! 144,138–174,621 CU, for 1 to 8 public inputs (see
 //! [Benchmarks](#benchmarks)).
 //!
 //! The syscalls ship with Solana 1.18 onward and are active on mainnet-beta.
@@ -45,10 +45,10 @@
 //!
 //! | Public inputs | Groth16 | Groth16-BSB22 |
 //! |--------------:|--------:|--------------:|
-//! | 1 | 78,293 | 211,461 |
-//! | 2 | 82,704 | 215,912 |
-//! | 4 | 91,448 | 224,681 |
-//! | 8 | 108,762 | 241,985 |
+//! | 1 | 78,293 | 144,138 |
+//! | 2 | 82,704 | 148,581 |
+//! | 4 | 91,448 | 157,300 |
+//! | 8 | 108,762 | 174,621 |
 
 #![no_std]
 
