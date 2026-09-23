@@ -66,11 +66,6 @@ test-go:
 test-program: build-program
     cargo test -p bsb22-integration-program --test failing --test setup_txt
 
-# Print the vk setup metadata baked into a program binary (local build
-# or `solana program dump`); --deny-insecure exits 2 on a test setup
-vk-setup *args:
-    cargo run -q -p groth16-solana --features gnark-vk --example vk_setup -- {{ args }}
-
 # === SBF program (tests/program) ===
 
 # build.rs regenerates the gnark fixtures, so both builds need the Go

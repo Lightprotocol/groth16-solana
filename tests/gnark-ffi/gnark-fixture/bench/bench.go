@@ -223,7 +223,7 @@ func generate(outDir string, withCommitment bool, n int) error {
 	}
 
 	// The proving key is written only so tests/program/build.rs can
-	// pin its SHA-256 in the generated vk const.
+	// put its SHA-256 into the generated vk const.
 	pkFile, err := os.Create(filepath.Join(outDir, label+"_pk.bin"))
 	if err != nil {
 		return fmt.Errorf("%s: create pk: %w", label, err)

@@ -600,9 +600,9 @@ mod tests {
 
     /// `VERIFYING_KEY` is a snarkjs key exported before any phase-2
     /// contribution: delta is still the G2 generator, equal to gamma.
-    /// The pairing check then collapses to `e(L + C, δ)`, so
-    /// `A = α, B = β, C = -L(x)` verifies for any public inputs `x`.
-    /// This is why `vk::setup` refuses to label such a key production.
+    /// Then `e(L, γ)·e(C, δ)` equals `e(L + C, δ)`, so
+    /// `A = α, B = β, C = -L(x)` verifies for any public inputs `x`,
+    /// and the vk generators reject `SetupKind::Production` for such a key.
     #[test]
     fn delta_equal_gamma_vk_accepts_forged_proof() {
         assert_eq!(VERIFYING_KEY.vk_delta_g2, VERIFYING_KEY.vk_gamma_g2);

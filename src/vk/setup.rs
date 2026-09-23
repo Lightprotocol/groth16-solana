@@ -1,4 +1,4 @@
-//! Setup metadata emitted next to every generated verifying key.
+//! Setup metadata the vk generators write next to each verifying key.
 //!
 //! Both generators ([`crate::vk::circom`] and [`crate::vk::gnark`])
 //! take a [`SetupKind`] and a [`ProvingKeySource`] and write, after
@@ -16,12 +16,12 @@
 //!
 //! A prover compares [`proving_key_sha256`] of the proving key it is
 //! about to load against `*_PROVING_KEY_SHA256`, so a stale or
-//! mismatched key fails before any proving time is spent.
+//! mismatched key fails before proving starts.
 //!
-//! An [`SetupKind::InsecureTest`] vk additionally carries
+//! A [`SetupKind::InsecureTest`] vk also gets
 //! `#[cfg(not(feature = "insecure-test-setup"))] compile_error!(..)`:
 //! the crate that includes it must declare and enable an
-//! `insecure-test-setup` feature, which deployable programs never do.
+//! `insecure-test-setup` feature. Deployable programs leave it off.
 //!
 //! # Checking a program binary
 //!
@@ -44,8 +44,8 @@ use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-/// Where the randomness of the Groth16 setup came from. Required by
-/// both generators so every build script states it explicitly.
+/// Where the randomness of the Groth16 setup came from. Both generators
+/// require it, so each build script has to state it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetupKind {
     /// Test-only: the secret setup scalars (α, β, γ, δ, τ) are public or
@@ -54,7 +54,7 @@ pub enum SetupKind {
     /// contribution leaves δ = γ; a throwaway local setup has nobody
     /// vouching that they were discarded. Whoever knows them can make
     /// the vk accept a proof for any public inputs without a valid
-    /// witness; honest proofs still need one. Never deploy it to devnet
+    /// witness; honest proofs still need one. Do not deploy it to devnet
     /// or mainnet.
     InsecureTest,
     /// The setup randomness was sampled from a secure source and
@@ -62,7 +62,8 @@ pub enum SetupKind {
     Production,
 }
 
-/// The proving key the generated `*_PROVING_KEY_SHA256` const pins.
+/// The proving key whose SHA-256 goes into the generated
+/// `*_PROVING_KEY_SHA256` const.
 #[derive(Debug, Clone, Copy)]
 pub enum ProvingKeySource<'a> {
     /// Hash this file (streamed, so multi-GB keys are fine). Preferred:
@@ -105,8 +106,8 @@ pub fn proving_key_sha256(path: impl AsRef<Path>) -> io::Result<[u8; 32]> {
 /// Whether `vk_delta_g2 == vk_gamma_g2`. snarkjs `groth16 setup`
 /// (`zkey_new.js`) and gnark mpcsetup phase 2 (`phase2.go`) both start
 /// delta at the G2 generator, which is also their gamma; only a
-/// phase-2 contribution moves it. With gamma equal to delta the
-/// verification equation collapses to `e(L + C, δ)`, so the proof
+/// phase-2 contribution moves it. With gamma equal to delta,
+/// `e(L, γ)·e(C, δ)` equals `e(L + C, δ)`, so the proof
 /// `A = α, B = β, C = -L(x)` verifies for every public input `x`.
 pub(crate) fn delta_equals_gamma(vk_gamma_g2: &[u8], vk_delta_g2: &[u8]) -> bool {
     vk_gamma_g2 == vk_delta_g2
@@ -119,7 +120,7 @@ pub(crate) fn header_warning(setup: SetupKind) -> &'static str {
         SetupKind::InsecureTest => {
             "// INSECURE TEST SETUP: the secret setup randomness is public or\n\
              // untrusted. Whoever knows it can make this verifying key accept a\n\
-             // proof for any public inputs without a valid witness. Never deploy\n\
+             // proof for any public inputs without a valid witness. Do not deploy\n\
              // it to devnet or mainnet.\n\n"
         }
         SetupKind::Production => "",
@@ -165,9 +166,9 @@ pub enum SetupTxtError {
     Malformed { offset: usize, reason: String },
 }
 
-/// Every `*_SETUP_TXT` embedded in `binary` (a program `.so`, local or
-/// dumped from chain), in file order. One entry per verifying key the
-/// program links.
+/// Every `*_SETUP_TXT` embedded in `binary` (a program `.so`, built
+/// locally or fetched with `solana program dump`), in file order. One
+/// entry per verifying key the program links.
 pub fn find_setup_txts(binary: &[u8]) -> Result<Vec<SetupTxt>, SetupTxtError> {
     let begin = SETUP_TXT_BEGIN.as_bytes();
     let end = SETUP_TXT_END.as_bytes();
@@ -307,7 +308,7 @@ pub(crate) fn metadata_rust_source(
             "\n#[cfg(not(feature = \"insecure-test-setup\"))]\n\
              compile_error!(\"{const_name} comes from an insecure test setup: whoever knows its \
              setup randomness can make it accept a proof for any public inputs. Enable the \
-             `insecure-test-setup` feature only in test builds, never for a devnet or mainnet \
+             `insecure-test-setup` feature only in test builds, not for a devnet or mainnet \
              deployment.\");\n"
         ));
     }

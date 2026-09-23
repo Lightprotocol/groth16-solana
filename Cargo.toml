@@ -71,9 +71,3 @@ bsb22 = ["sha2", "dep:ark-bn254", "dep:ark-ff"]
 # FFI tests in tests/gnark-ffi/ can compare it against gnark-crypto.
 # Not a stable API surface.
 bsb22-test = ["bsb22"]
-
-# Reads the vk setup metadata back from a program .so, local or
-# `solana program dump`ed; see src/vk/setup.rs.
-[[example]]
-name = "vk_setup"
-required-features = ["gnark-vk"]

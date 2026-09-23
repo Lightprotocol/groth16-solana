@@ -3,7 +3,7 @@
 
 // INSECURE TEST SETUP: the secret setup randomness is public or
 // untrusted. Whoever knows it can make this verifying key accept a
-// proof for any public inputs without a valid witness. Never deploy
+// proof for any public inputs without a valid witness. Do not deploy
 // it to devnet or mainnet.
 
 use groth16_solana::groth16::Groth16Verifyingkey;
@@ -47,9 +47,9 @@ pub const VERIFYINGKEY_INSECURE_TEST_SETUP: bool = true;
 /// The two consts above as a delimited string, exported so it stays in
 /// the program binary; read it back with
 /// `groth16_solana::vk::setup::find_setup_txts`.
-#[unsafe(export_name = "groth16_solana_vk_setup_261767b906faa16e")]
+#[unsafe(export_name = "groth16_solana_vk_setup_f2299b2895ab060a")]
 #[rustfmt::skip]
 pub static VERIFYINGKEY_SETUP_TXT: &str = "=======BEGIN GROTH16 VK SETUP V1=======\x00name\x00VERIFYINGKEY\x00insecure_test_setup\x00true\x00proving_key_sha256\x0081941f7c34ebaf22bf4aeddd2126453e60f2f61aec9ec2a252bdd491bba406e7\x00=======END GROTH16 VK SETUP V1=======\x00";
 
 #[cfg(not(feature = "insecure-test-setup"))]
-compile_error!("VERIFYINGKEY comes from an insecure test setup: whoever knows its setup randomness can make it accept a proof for any public inputs. Enable the `insecure-test-setup` feature only in test builds, never for a devnet or mainnet deployment.");
+compile_error!("VERIFYINGKEY comes from an insecure test setup: whoever knows its setup randomness can make it accept a proof for any public inputs. Enable the `insecure-test-setup` feature only in test builds, not for a devnet or mainnet deployment.");

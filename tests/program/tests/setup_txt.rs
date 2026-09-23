@@ -1,7 +1,7 @@
-//! The `*_SETUP_TXT` markers survive into the SBF binary: reading the
+//! The `*_SETUP_TXT` markers are present in the SBF binary: reading the
 //! built .so (as a post-deployment check would read a
 //! `solana program dump`) finds one marker per baked vk, each flagged
-//! as an insecure test setup and pinning the SHA-256 of its fixture
+//! as an insecure test setup and containing the SHA-256 of its fixture
 //! proving key. Requires the .so from `cargo build-sbf` (plain or
 //! `--features profile-program`).
 

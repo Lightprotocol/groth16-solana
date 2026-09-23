@@ -79,7 +79,8 @@ check.
 43. `vk::gnark::tests::bsb22_vk_to_rust_const_rejects_production_vk_with_delta_equal_gamma`
 44. `vk::gnark::tests::bsb22_vk_to_rust_const_accepts_insecure_test_vk_with_delta_equal_gamma`
 45. `vk::gnark::tests::generate_bsb22_vk_file_pins_proving_key_sha256`
-    — SHA-256("abc") proving key file lands in the generated const
+    — the SHA-256 of an "abc" proving key file appears in the
+    generated const
 46. `vk::gnark::tests::generate_bsb22_vk_file_reports_io_error_for_missing_proving_key`
 47. `vk::gnark::tests::generate_bsb22_vk_file_reports_io_error_for_missing_input`
 48. `vk::setup::tests::proving_key_sha256_matches_known_vector` — FIPS
@@ -169,16 +170,15 @@ the exact `ProgramError` the client sees.
     against instruction-format drift
 17. `setup_txt_readable_from_program_binary` (`setup_txt.rs`) — reads
     the exported `*_SETUP_TXT` markers back from the built .so: one
-    per vk, all flagged insecure, each pinning its fixture pk.bin
+    per vk, all flagged insecure, each with the SHA-256 of its
+    fixture pk.bin
 18. `bench_cu` (`--ignored`) — executes all 8 variants successfully
     under mollusk and regenerates BENCHMARKS.md
 
-The same check runs by hand on any program binary, including one
-dumped from chain with `solana program dump`:
-
-```sh
-cargo run -p groth16-solana --features gnark-vk --example vk_setup -- [--deny-insecure] program.so
-```
+Deploy tooling reads the same markers with
+`vk::setup::find_setup_txts`, from a local build or a
+`solana program dump`; `strings program.so | grep -A7 "BEGIN GROTH16 VK SETUP"`
+shows them by hand.
 
 ### Circom end-to-end (tests/rust-vk, requires npm + circom)
 

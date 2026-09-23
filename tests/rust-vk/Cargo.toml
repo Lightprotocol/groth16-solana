@@ -17,7 +17,7 @@ light-merkle-tree-reference = "3.0.0"
 [features]
 default = ["insecure-test-setup"]
 # build.rs generates the vk as an insecure test setup; the generated
-# file refuses to compile without this feature.
+# file does not compile without this feature.
 insecure-test-setup = []
 
 [dev-dependencies]

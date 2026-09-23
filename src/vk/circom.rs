@@ -305,7 +305,7 @@ pub fn parse_vk_json_to_rust_string(
 /// * `setup` - Where the setup randomness came from; an
 ///   [`SetupKind::InsecureTest`] vk compiles only in a crate that
 ///   enables an `insecure-test-setup` feature
-/// * `proving_key` - The zkey whose SHA-256 the generated file pins
+/// * `proving_key` - The zkey whose SHA-256 goes into the generated file
 ///
 /// # Example
 ///

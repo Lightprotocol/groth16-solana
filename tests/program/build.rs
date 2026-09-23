@@ -10,7 +10,7 @@
 // committed files. The only requirement is a Go toolchain, which
 // tests/gnark-ffi already needs.
 //
-// Seeded randomness means the toxic waste is public, so every vk is
+// The seed makes the secret setup scalars public, so each vk is
 // generated as `SetupKind::InsecureTest` and only compiles with the
 // `insecure-test-setup` feature (on by default in this test crate).
 

@@ -44,7 +44,7 @@ at your own risk.
 
 ## Verifying key setup metadata
 
-Both vk generators take a `SetupKind` and the proving key, and emit
+Both vk generators take a `SetupKind` and the proving key, and write
 next to the vk const:
 
 - `<NAME>_PROVING_KEY_SHA256` — a prover hashes the proving key it is
@@ -58,11 +58,12 @@ next to the vk const:
   equals its gamma (no phase-2 contribution) is an error.
 - `<NAME>_SETUP_TXT` — both values as an exported, delimited string
   (the `security.txt` technique), so they can be read back from a
-  program binary after deployment:
+  program binary after deployment with `vk::setup::find_setup_txts`,
+  or by hand:
 
 ```sh
 solana program dump <PROGRAM_ID> program.so
-cargo run -p groth16-solana --features gnark-vk --example vk_setup -- --deny-insecure program.so
+strings program.so | grep -A7 "BEGIN GROTH16 VK SETUP"
 ```
 
 ## Benchmarks
