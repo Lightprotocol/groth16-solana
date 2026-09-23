@@ -142,7 +142,9 @@ check-readme:
     set -euo pipefail
     # --locked: a fresh resolve pulls deps whose MSRV exceeds the
     # pinned CI toolchain; cargo-rdme's own lockfile compiles on it.
-    command -v cargo-rdme >/dev/null || cargo install --locked cargo-rdme
+    # --version: cargo-rdme 2.2.3 requires rustc 1.96, above that
+    # toolchain.
+    command -v cargo-rdme >/dev/null || cargo install --locked cargo-rdme --version 2.1.0
     cargo rdme --check
 
 # === Maintenance ===
