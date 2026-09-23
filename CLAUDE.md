@@ -53,19 +53,27 @@ check.
     64/16-byte shape (`PROPTEST_CASES`, default 1000)
 28. `hash_to_field::tests::prop_expander_max_msg` — proptest,
     187/1-byte shape
-29. `vk::gnark::tests::parse_bsb22_vk_shape`
-30. `vk::gnark::tests::rejects_truncated_input`
-31. `vk::gnark::tests::rejects_trailing_bytes`
-32. `vk::gnark::tests::rejects_multi_commitment`
-33. `vk::gnark::tests::rejects_multi_commitment_keys`
-34. `vk::gnark::tests::rejects_lockstep_mismatch`
-35. `vk::gnark::tests::rejects_committed_public_inputs`
-36. `vk::gnark::tests::bsb22_vk_to_rust_const_roundtrip`
-37. `vk::gnark::tests::generate_bsb22_vk_file_reports_io_error_for_missing_input`
-38. `circom_vk_codegen::generates_const_with_vk_commitment_none`
-39. `circom_vk_codegen::rejects_empty_ic`
-40. `circom_vk_codegen::rejects_empty_point_coordinates`
-41. `readme_benchmarks::crate_docs_cu_table_matches_benchmarks` — pins
+29. `hash_to_field::tests::prop_reduce_be_l48_matches_single_buffer`
+    — proptest, production halved reduction vs arkworks'
+    whole-buffer reduction
+30. `hash_to_field::tests::reduce_be_l48_matches_single_buffer_at_bounds`
+31. `hash_to_field::tests::reduce_be_l48_wraps_on_final_add` — r,
+    r + 1 and the largest multiple of r below 2^384, where the final
+    add wraps past r
+32. `vk::gnark::tests::parse_bsb22_vk_shape`
+33. `vk::gnark::tests::rejects_truncated_input`
+34. `vk::gnark::tests::rejects_trailing_bytes`
+35. `vk::gnark::tests::rejects_oversized_nb_k_without_allocating`
+36. `vk::gnark::tests::rejects_multi_commitment`
+37. `vk::gnark::tests::rejects_multi_commitment_keys`
+38. `vk::gnark::tests::rejects_lockstep_mismatch`
+39. `vk::gnark::tests::rejects_committed_public_inputs`
+40. `vk::gnark::tests::bsb22_vk_to_rust_const_roundtrip`
+41. `vk::gnark::tests::generate_bsb22_vk_file_reports_io_error_for_missing_input`
+42. `circom_vk_codegen::generates_const_with_vk_commitment_none`
+43. `circom_vk_codegen::rejects_empty_ic`
+44. `circom_vk_codegen::rejects_empty_point_coordinates`
+45. `readme_benchmarks::crate_docs_cu_table_matches_benchmarks` — pins
     the CU table in the src/lib.rs crate docs (rendered into README.md
     by cargo-rdme) to the BENCHMARKS.md totals
 

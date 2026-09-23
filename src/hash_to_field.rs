@@ -8,17 +8,21 @@
 //!    (16 + 32 — the BN254 Fr modulus is 254 bits, plus a 128-bit
 //!    security margin).
 //! 2. Interpret the 48-byte output as a big-endian integer and reduce
-//!    mod r via `ark_bn254::Fr::from_le_bytes_mod_order` (over the
-//!    reversed buffer — the BE wrapper heap-allocates, the LE path
-//!    does not).
+//!    mod r as two 24-byte halves, `high * 2^192 + low`.
 //!
 //! gnark's `fr.Hash(msg, dst, 1)` returns the resulting field element
 //! marshalled as 32 big-endian bytes; we return the same.
 //!
+//! Halving is a cost choice, not a semantic one. arkworks'
+//! `from_le_bytes_mod_order` folds every byte past the modulus width
+//! through a field multiply and add, so `reduce_be_l48` reads each half
+//! as three u64 limbs instead and costs one Montgomery multiply in
+//! total.
+//!
 //! The implementation is **allocation-free**: the three SHA-256
 //! preimage buffers used inside `expand_message_xmd` are
 //! stack-allocated `[u8; MAX_SCRATCH]` arrays, the modular reduction
-//! uses arkworks' non-allocating LE path, and the result is
+//! reads limbs straight from the stack buffer, and the result is
 //! serialized limb-by-limb into a stack array. This keeps the
 //! CU cost predictable and avoids BPF heap pressure.
 //!
@@ -28,7 +32,7 @@
 
 use crate::syscalls::sha256;
 use ark_bn254::Fr;
-use ark_ff::PrimeField;
+use ark_ff::BigInt;
 
 /// SHA-256 output size in bytes.
 const B_IN_BYTES: usize = 32;
@@ -36,6 +40,10 @@ const B_IN_BYTES: usize = 32;
 const R_IN_BYTES: usize = 64;
 /// Per-element output length: 16-byte security margin + 32-byte modulus.
 const L: usize = 48;
+/// Three u64 limbs, so a half is below `2^192 < r`.
+const HALF_L: usize = L / 2;
+/// `2^192`; its Montgomery form is `2^192 * R`.
+const TWO_POW_192: Fr = Fr::new(BigInt::new([0, 0, 0, 1]));
 /// Upper bound on the `expand_message_xmd` preimage buffer size. Big
 /// enough for any BSB22 call: `z_pad (64) + msg + l_i_b_str (2) +
 /// 0x00 (1) + dst_prime (dst + 1)` with `msg <= ~150` bytes and `dst
@@ -126,21 +134,41 @@ fn expand_message_xmd_sha256_l48<const MSG_LEN: usize, const DST_LEN: usize>(
     out
 }
 
+/// Reduce a 48-byte big-endian integer mod r as `high * 2^192 + low`,
+/// returning canonical limbs.
+///
+/// Works on raw limbs: a Montgomery multiply computes `a * b * R^-1`, so
+/// the plain integer `high` times the Montgomery form of `2^192` is the
+/// plain integer `high * 2^192 mod r`. `low < 2^192 < r` is already
+/// reduced, and addition mod r is the same in either form.
+fn reduce_be_l48(raw: &[u8; L]) -> BigInt<4> {
+    // Whole limbs per half; the destructuring below fixes six limbs, so
+    // together these pin L to 48 at compile time.
+    const { assert!(L == 2 * HALF_L && HALF_L.is_multiple_of(8)) };
+    // `rchunks_exact` walks the big-endian buffer from its least
+    // significant word, which matches `BigInt`'s little-endian limbs.
+    let mut limbs = [0u64; L / 8];
+    for (limb, word) in limbs.iter_mut().zip(raw.rchunks_exact(8)) {
+        let mut bytes = [0u8; 8];
+        bytes.copy_from_slice(word);
+        *limb = u64::from_be_bytes(bytes);
+    }
+    let [l0, l1, l2, h0, h1, h2] = limbs;
+    (Fr::new_unchecked(BigInt::new([h0, h1, h2, 0])) * TWO_POW_192
+        + Fr::new_unchecked(BigInt::new([l0, l1, l2, 0])))
+    .0
+}
+
 /// Compute gnark's `fr.Hash(msg, dst, 1)` over BN254 Fr and return the
 /// resulting element as 32 big-endian bytes.
 pub fn hash_to_field_bn254_fr<const MSG_LEN: usize, const DST_LEN: usize>(
     msg: &[u8; MSG_LEN],
     dst: &[u8; DST_LEN],
 ) -> [u8; 32] {
-    let mut raw = expand_message_xmd_sha256_l48(msg, dst);
-    // ark's `from_be_bytes_mod_order` copies its input to a heap Vec
-    // just to reverse it; reverse the stack buffer in place and take
-    // the LE path, which is allocation-free.
-    raw.reverse();
-    let fr_elem = Fr::from_le_bytes_mod_order(&raw);
+    let raw = expand_message_xmd_sha256_l48(msg, dst);
     // `BigInt::to_bytes_be` returns a Vec; serialize the four
     // little-endian u64 limbs to big-endian bytes on the stack instead.
-    let limbs = fr_elem.into_bigint().0;
+    let limbs = reduce_be_l48(&raw).0;
     let mut out = [0u8; 32];
     for (chunk, limb) in out.chunks_exact_mut(8).zip(limbs.iter().rev()) {
         chunk.copy_from_slice(&limb.to_be_bytes());
@@ -153,6 +181,7 @@ mod tests {
     use super::*;
     use alloc::vec;
     use alloc::vec::Vec;
+    use ark_ff::PrimeField;
     use proptest::prelude::*;
 
     /// Golden vectors harvested from gnark-crypto v0.19.0 via the
@@ -354,6 +383,64 @@ mod tests {
 
     expander_shape_proptest!(prop_expander_bsb22_shape, 64, 16);
     expander_shape_proptest!(prop_expander_max_msg, 187, 1);
+
+    /// Oracle for `reduce_be_l48`: arkworks' generic reduction of the
+    /// whole buffer at once.
+    fn reduce_single_buffer(raw: &[u8; L]) -> BigInt<4> {
+        let mut le = *raw;
+        le.reverse();
+        Fr::from_le_bytes_mod_order(&le).into_bigint()
+    }
+
+    // A wrong constant or a swapped half shows up here.
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(proptest_cases()))]
+        #[test]
+        fn prop_reduce_be_l48_matches_single_buffer(raw in any::<[u8; L]>()) {
+            prop_assert_eq!(reduce_be_l48(&raw), reduce_single_buffer(&raw));
+        }
+    }
+
+    /// All-ones reduces furthest.
+    #[test]
+    fn reduce_be_l48_matches_single_buffer_at_bounds() {
+        for raw in [[0u8; L], [0xffu8; L]] {
+            assert_eq!(reduce_be_l48(&raw), reduce_single_buffer(&raw));
+        }
+    }
+
+    /// The final `+` in `reduce_be_l48` adds canonical integers, so its
+    /// reduction fires only when `(x mod r) < low`, about 2^-62 of
+    /// random inputs, and the proptest never reaches it. These inputs
+    /// do: r, r + 1, and the largest multiple of r below 2^384.
+    #[test]
+    fn reduce_be_l48_wraps_on_final_add() {
+        let cases = [
+            (
+                "0000000000000000000000000000000030644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001",
+                BigInt::from(0u64),
+            ),
+            (
+                "0000000000000000000000000000000030644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000002",
+                BigInt::from(1u64),
+            ),
+            (
+                "fffffffffffffffffffffffffffffffffc2a7e28b7005da1cd3b8afb86a84084580ed5335a4932734f8a257e10730147",
+                BigInt::from(0u64),
+            ),
+        ];
+        for (hex, want) in cases {
+            let raw: [u8; L] = hex_to_vec(hex).try_into().unwrap();
+            let got = reduce_be_l48(&raw);
+            assert_eq!(got, want, "{hex}");
+            assert_eq!(got, reduce_single_buffer(&raw), "{hex}");
+            // Guard the premise: the case must keep exercising the wrap.
+            let mut low_only = raw;
+            low_only.iter_mut().take(HALF_L).for_each(|b| *b = 0);
+            let low = reduce_single_buffer(&low_only);
+            assert!(got < low, "{hex} does not wrap");
+        }
+    }
 
     fn hex_to_vec(s: &str) -> Vec<u8> {
         assert!(s.len().is_multiple_of(2));
