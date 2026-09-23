@@ -598,6 +598,45 @@ mod tests {
         assert_eq!(FR_MODULUS_BE.to_vec(), ark_bn254::Fr::MODULUS.to_bytes_be());
     }
 
+    /// `VERIFYING_KEY` is a snarkjs key exported before any phase-2
+    /// contribution: delta is still the G2 generator, equal to gamma.
+    /// Then `e(L, γ)·e(C, δ)` equals `e(L + C, δ)`, so
+    /// `A = α, B = β, C = -L(x)` verifies for any public inputs `x`,
+    /// and the vk generators reject `SetupKind::Production` for such a key.
+    #[test]
+    fn delta_equal_gamma_vk_accepts_forged_proof() {
+        assert_eq!(VERIFYING_KEY.vk_delta_g2, VERIFYING_KEY.vk_gamma_g2);
+        // Arbitrary public inputs, unrelated to any real witness.
+        let inputs: [[u8; 32]; 9] = core::array::from_fn(|i| {
+            let mut input = [0u8; 32];
+            if let Some(last) = input.last_mut() {
+                *last = i as u8 + 1;
+            }
+            input
+        });
+        let forge = |vk: &Groth16Verifyingkey| {
+            let mut prepare =
+                Groth16Verifier::new(&[0u8; 64], &[0u8; 128], &[0u8; 64], &inputs, vk).unwrap();
+            prepare.prepare_inputs::<true>().unwrap();
+            let proof_a = negate_g1_be(&vk.vk_alpha_g1);
+            let proof_c = negate_g1_be(&prepare.prepared_public_inputs);
+            Groth16Verifier::new(&proof_a, &vk.vk_beta_g2, &proof_c, &inputs, vk)
+                .unwrap()
+                .verify()
+        };
+        assert_eq!(forge(&VERIFYING_KEY), Ok(()));
+
+        // The same forgery fails once delta differs from gamma.
+        let contributed = Groth16Verifyingkey {
+            vk_delta_g2: VERIFYING_KEY.vk_beta_g2,
+            ..VERIFYING_KEY
+        };
+        assert_eq!(
+            forge(&contributed),
+            Err(Groth16Error::ProofVerificationFailed)
+        );
+    }
+
     #[test]
     fn test_is_less_than_bn254_field_size_be() {
         let bytes = [0u8; 32];

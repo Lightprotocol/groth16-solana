@@ -38,6 +38,30 @@
 //! - `bsb22-test` — re-exports the hash-to-field internals for the
 //!   differential FFI tests. Test-only, not a stable API.
 //!
+//! # Verifying key setup metadata
+//!
+//! Both vk generators take a `SetupKind` and the proving key, and write
+//! next to the vk const:
+//!
+//! - `<NAME>_PROVING_KEY_SHA256` — a prover hashes the proving key it is
+//!   about to load (`vk::setup::proving_key_sha256`) and compares, so a
+//!   stale or mismatched key fails before proving.
+//! - `<NAME>_INSECURE_TEST_SETUP` — `true` for `SetupKind::InsecureTest`
+//!   (seeded or otherwise untrusted setup randomness: whoever knows it
+//!   can make the vk accept a proof for any public inputs). Such a vk
+//!   only compiles in a crate that enables an `insecure-test-setup`
+//!   feature. Declaring `SetupKind::Production` for a vk whose delta
+//!   equals its gamma (no phase-2 contribution) is an error.
+//! - `<NAME>_SETUP_TXT` — both values as an exported, delimited string
+//!   (the `security.txt` technique), so they can be read back from a
+//!   program binary after deployment with `vk::setup::find_setup_txts`,
+//!   or by hand:
+//!
+//! ```sh
+//! solana program dump <PROGRAM_ID> program.so
+//! strings program.so | grep -A7 "BEGIN GROTH16 VK SETUP"
+//! ```
+//!
 //! # Benchmarks
 //!
 //! End-to-end verification cost (proof parsing, verifier construction,
@@ -98,6 +122,13 @@ pub use hash_to_field::hash_to_field_bn254_fr;
 pub mod vk {
     #[cfg(feature = "circom-vk")]
     pub mod circom;
+
+    // Shared by both generators, so gated on the union of their cfgs.
+    #[cfg(any(
+        feature = "circom-vk",
+        all(feature = "gnark-vk", not(target_os = "solana"))
+    ))]
+    pub mod setup;
 
     // Host-only: the parser owns its IC column as a `Vec` and the
     // generator writes files; neither belongs in an SBF build, and

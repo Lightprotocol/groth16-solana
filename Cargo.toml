@@ -58,10 +58,13 @@ proptest = "1"
 
 [features]
 # snarkjs verification_key.json parser + Rust-const generator (vk::circom).
-circom-vk = ["serde", "serde_json", "dep:num-bigint"]
+# `sha2` hashes the proving key for the generated checksum const.
+circom-vk = ["serde", "serde_json", "dep:num-bigint", "sha2"]
 # gnark vk.WriteRawTo parser + Rust-const generator (vk::gnark).
-# Independent of `bsb22`: parses plain and BSB22 vks alike.
-gnark-vk = []
+# Independent of `bsb22`: parses plain and BSB22 vks alike. `sha2`
+# hashes the proving key; the activation is a no-op on the solana
+# target, where the generator is compiled out.
+gnark-vk = ["sha2"]
 circom = ["circom-prover", "ark-groth16", "dep:ark-bn254", "dep:ark-ff"]
 bsb22 = ["sha2", "dep:ark-bn254", "dep:ark-ff"]
 # Test-only: re-exports `hash_to_field_bn254_fr` so the differential
