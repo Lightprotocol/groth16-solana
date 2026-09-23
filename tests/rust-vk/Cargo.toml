@@ -14,6 +14,17 @@ light-compressed-account = { version = "0.5.0", features = ["new-unique"] }
 light-hasher = { version = "4.0.0", features = ["solana"] }
 light-merkle-tree-reference = "3.0.0"
 
+[features]
+default = ["insecure-test-setup"]
+# build.rs generates the vk as an insecure test setup; the generated
+# file refuses to compile without this feature.
+insecure-test-setup = []
+
+[dev-dependencies]
+# Test-only: vk::setup::proving_key_sha256 checks the zkey against the
+# baked vk before proving.
+groth16-solana = { path = "../..", features = ["circom-vk"] }
+
 [build-dependencies]
 groth16-solana = { path = "../..", features = ["circom-vk", "circom"] }
 rust-witness = "0.1"

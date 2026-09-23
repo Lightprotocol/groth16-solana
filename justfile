@@ -39,9 +39,9 @@ check-benchmarks:
 
 # === Tests (per-suite test list in CLAUDE.md) ===
 
-# The workspace run misses the `circom-vk`-gated codegen tests (no
-# member enables that feature as a normal dependency), so `test` chains
-# the all-features unit run, mirroring CI.
+# The workspace run reaches the `circom-vk`-gated codegen tests only
+# through tests/rust-vk's dev-dependency, so `test` chains the
+# all-features unit run, mirroring CI.
 
 # Workspace tests plus the all-features unit run
 test: test-workspace test-unit
@@ -61,9 +61,15 @@ test-ffi:
 test-go:
     cd tests/gnark-ffi/gnark-fixture && go test ./...
 
-# Mollusk negative tests for every verifier variant
+# Mollusk negative tests for every verifier variant, plus the vk setup
+# markers read back from the .so
 test-program: build-program
-    cargo test -p bsb22-integration-program --test failing
+    cargo test -p bsb22-integration-program --test failing --test setup_txt
+
+# Print the vk setup metadata baked into a program binary (local build
+# or `solana program dump`); --deny-insecure exits 2 on a test setup
+vk-setup *args:
+    cargo run -q -p groth16-solana --features gnark-vk --example vk_setup -- {{ args }}
 
 # === SBF program (tests/program) ===
 

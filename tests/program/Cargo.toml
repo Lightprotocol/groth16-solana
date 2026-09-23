@@ -34,6 +34,10 @@ check-cfg = [
 crate-type = ["cdylib", "lib"]
 
 [features]
+default = ["insecure-test-setup"]
+# The baked vks come from a seeded gnark setup (public toxic waste);
+# their generated files refuse to compile without this feature.
+insecure-test-setup = []
 # Instrument #[profile] functions with the profiler's custom syscalls.
 # Only mollusk (bench_cu.rs) registers those syscalls — a .so built
 # with this feature aborts under litesvm/validators.
@@ -55,6 +59,10 @@ blake3 = { workspace = true }
 groth16-solana = { path = "../..", features = ["gnark-vk"] }
 
 [dev-dependencies]
+# Test-only: tests/setup_txt.rs reads the vk setup markers back from
+# the .so with vk::setup::find_setup_txts. As a dev-dependency the
+# feature never reaches the program build (resolver 2).
+groth16-solana = { path = "../..", features = ["gnark-vk"] }
 # Mollusk CU-profiling harness (bench_cu.rs). Mollusk 0.3 is built on
 # the solana 2.x crates, so its instruction/account/pubkey types are
 # pulled in renamed.

@@ -9,8 +9,13 @@
 // proofs — reproduces byte-identical fixtures instead of reading
 // committed files. The only requirement is a Go toolchain, which
 // tests/gnark-ffi already needs.
+//
+// Seeded randomness means the toxic waste is public, so every vk is
+// generated as `SetupKind::InsecureTest` and only compiles with the
+// `insecure-test-setup` feature (on by default in this test crate).
 
 use groth16_solana::vk::gnark::generate_bsb22_vk_file;
+use groth16_solana::vk::setup::{ProvingKeySource, SetupKind};
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -49,11 +54,14 @@ fn main() {
         for n in PUBLIC_INPUT_COUNTS {
             let label = format!("{mode}_{n}");
             let vk_path = fixture_dir.join(format!("{label}_vk.bin"));
+            let pk_path = fixture_dir.join(format!("{label}_pk.bin"));
             generate_bsb22_vk_file(
                 &vk_path,
                 &out_dir,
                 &format!("vk_{label}.rs"),
                 &format!("VK_{}", label.to_uppercase()),
+                SetupKind::InsecureTest,
+                ProvingKeySource::File(&pk_path),
             )
             .unwrap_or_else(|e| panic!("generate vk const for {label}: {e:?}"));
         }

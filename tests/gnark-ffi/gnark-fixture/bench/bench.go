@@ -222,6 +222,20 @@ func generate(outDir string, withCommitment bool, n int) error {
 		return fmt.Errorf("%s: close vk: %w", label, err)
 	}
 
+	// The proving key is written only so tests/program/build.rs can
+	// pin its SHA-256 in the generated vk const.
+	pkFile, err := os.Create(filepath.Join(outDir, label+"_pk.bin"))
+	if err != nil {
+		return fmt.Errorf("%s: create pk: %w", label, err)
+	}
+	if _, err := pk.WriteTo(pkFile); err != nil {
+		pkFile.Close()
+		return fmt.Errorf("%s: write pk: %w", label, err)
+	}
+	if err := pkFile.Close(); err != nil {
+		return fmt.Errorf("%s: close pk: %w", label, err)
+	}
+
 	ar := bnProof.Ar.RawBytes()
 	bs := bnProof.Bs.RawBytes()
 	krs := bnProof.Krs.RawBytes()

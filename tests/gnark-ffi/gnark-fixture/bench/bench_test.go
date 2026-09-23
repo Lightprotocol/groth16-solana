@@ -32,8 +32,8 @@ func TestGenerateIsDeterministic(t *testing.T) {
 	if len(entries) == 0 {
 		t.Fatal("no fixture files generated")
 	}
-	// 4 plain sets x 5 files + 4 bsb22 sets x 7 files
-	if want := 4*5 + 4*7; len(entries) != want {
+	// 4 plain sets x 6 files + 4 bsb22 sets x 8 files
+	if want := 4*6 + 4*8; len(entries) != want {
 		t.Fatalf("expected %d fixture files, got %d", want, len(entries))
 	}
 

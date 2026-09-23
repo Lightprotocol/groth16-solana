@@ -51,7 +51,12 @@ The `build.rs` script does two things:
 1. **Generates Verification Key Rust Code**:
    - Reads `build/verification_key.json`
    - Uses `groth16_solana::vk::circom::generate_vk_file()` to convert it to Rust
-   - Outputs `src/verifying_key.rs` containing the `VERIFYINGKEY` constant
+   - Outputs `src/verifying_key.rs` containing the `VERIFYINGKEY` constant,
+     plus `VERIFYINGKEY_PROVING_KEY_SHA256` (SHA-256 of the final zkey) and
+     `VERIFYINGKEY_INSECURE_TEST_SETUP = true`
+   - The setup is a throwaway single-contribution phase 2, so it is declared
+     `SetupKind::InsecureTest` and the crate enables its
+     `insecure-test-setup` feature by default
 
 2. **Transpiles Witness Generator**:
    - Converts the WASM witness generator to a native Rust library
@@ -61,10 +66,12 @@ The `build.rs` script does two things:
 
 The integration test (`src/lib.rs`):
 
-1. Creates a compressed account and Merkle proof inputs
-2. Generates a Groth16 proof using `circom-prover`
-3. Converts the proof to the format expected by `groth16-solana`
-4. Verifies the proof using `Groth16Verifier` with the generated `VERIFYINGKEY`
+1. Checks the zkey's SHA-256 against `VERIFYINGKEY_PROVING_KEY_SHA256`
+   (a stale zkey fails here instead of producing a proof the vk rejects)
+2. Creates a compressed account and Merkle proof inputs
+3. Generates a Groth16 proof using `circom-prover`
+4. Converts the proof to the format expected by `groth16-solana`
+5. Verifies the proof using `Groth16Verifier` with the generated `VERIFYINGKEY`
 
 ## Project Structure
 
