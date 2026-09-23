@@ -78,7 +78,7 @@ tests/rust-vk/
 ├── circuits/
 │   └── compressed_account_merkle_proof.circom
 ├── pot/
-│   └── powersOfTau28_hez_final_16.ptau
+│   └── ppot_0080_16.ptau
 ├── scripts/
 │   └── setup.sh
 ├── src/
