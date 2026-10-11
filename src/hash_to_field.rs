@@ -32,7 +32,7 @@
 
 use crate::syscalls::sha256;
 use ark_bn254::Fr;
-use ark_ff::BigInt;
+use ark_ff::{BigInt, PrimeField};
 
 /// SHA-256 output size in bytes.
 const B_IN_BYTES: usize = 32;
@@ -174,6 +174,63 @@ pub fn hash_to_field_bn254_fr<const MSG_LEN: usize, const DST_LEN: usize>(
         chunk.copy_from_slice(&limb.to_be_bytes());
     }
     out
+}
+
+/// Return the canonical gnark hash after checking an untrusted reduction hint.
+/// The quotient uses 17 bytes because `floor((2^384 - 1) / r)` has 131 bits.
+/// Every multiply-add is exact in u128: `(2^64-1)^2 + 2*(2^64-1) <= 2^128-1`.
+/// Seven output limbs retain all carries, including values larger than 384 bits.
+pub(crate) fn hash_to_field_bn254_fr_with_hint<const MSG: usize, const DST: usize>(
+    msg: &[u8; MSG],
+    dst: &[u8; DST],
+    hint: &crate::groth16::Bsb22HashHint,
+) -> Result<[u8; 32], crate::errors::Groth16Error> {
+    let raw = expand_message_xmd_sha256_l48(msg, dst);
+    if !check_reduction_hint(&raw, hint) {
+        return Err(crate::errors::Groth16Error::Bsb22InvalidHashHint);
+    }
+    Ok(hint.remainder)
+}
+
+fn check_reduction_hint(raw: &[u8; L], hint: &crate::groth16::Bsb22HashHint) -> bool {
+    if !crate::groth16::is_less_than_bn254_field_size_be(&hint.remainder) {
+        return false;
+    }
+    let mut q0 = [0u8; 8];
+    q0.copy_from_slice(&hint.quotient[9..]);
+    let mut q1 = [0u8; 8];
+    q1.copy_from_slice(&hint.quotient[1..9]);
+    let mut product = [0u64; 7];
+    for (limb, word) in product.iter_mut().zip(hint.remainder.rchunks_exact(8)) {
+        let mut bytes = [0u8; 8];
+        bytes.copy_from_slice(word);
+        *limb = u64::from_be_bytes(bytes);
+    }
+    multiply_add_quotient_limb::<0>(&mut product, u64::from_be_bytes(q0));
+    multiply_add_quotient_limb::<1>(&mut product, u64::from_be_bytes(q1));
+    multiply_add_quotient_limb::<2>(&mut product, hint.quotient[0] as u64);
+    product[6] == 0
+        && product[..6]
+            .iter()
+            .zip(raw.rchunks_exact(8))
+            .all(|(got, word)| {
+                let mut bytes = [0u8; 8];
+                bytes.copy_from_slice(word);
+                *got == u64::from_be_bytes(bytes)
+            })
+}
+
+fn multiply_add_quotient_limb<const OFFSET: usize>(product: &mut [u64; 7], quotient: u64) {
+    const {
+        assert!(OFFSET <= 2);
+    }
+    let mut carry = 0u128;
+    for (part, modulus) in product[OFFSET..OFFSET + 4].iter_mut().zip(Fr::MODULUS.0) {
+        let value = quotient as u128 * modulus as u128 + *part as u128 + carry;
+        *part = value as u64;
+        carry = value >> 64;
+    }
+    product[OFFSET + 4] = carry as u64;
 }
 
 #[cfg(test)]
@@ -457,5 +514,84 @@ mod tests {
             out[i] = u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap();
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod hint_tests {
+    use super::*;
+    use crate::groth16::Bsb22HashHint;
+    use ark_ff::BigInteger;
+    use num_bigint::BigUint;
+    use proptest::prelude::*;
+
+    fn hint(raw: &[u8; L]) -> Bsb22HashHint {
+        let x = BigUint::from_bytes_be(raw);
+        let modulus = BigUint::from_bytes_be(&Fr::MODULUS.to_bytes_be());
+        let quotient = (&x / &modulus).to_bytes_be();
+        let remainder = (&x % &modulus).to_bytes_be();
+        let mut h = Bsb22HashHint {
+            quotient: [0; 17],
+            remainder: [0; 32],
+        };
+        h.quotient[17 - quotient.len()..].copy_from_slice(&quotient);
+        h.remainder[32 - remainder.len()..].copy_from_slice(&remainder);
+        h
+    }
+
+    proptest! {
+        #[test]
+        fn checked_hint_matches_integer_division(raw in any::<[u8; L]>()) {
+            let h = hint(&raw);
+            prop_assert!(check_reduction_hint(&raw, &h));
+            prop_assert_eq!(BigUint::from_bytes_be(&h.remainder), BigUint::from_bytes_le(&reduce_be_l48(&raw).to_bytes_le()));
+            for i in 0..17 {
+                let mut bad = h; bad.quotient[i] ^= 1;
+                prop_assert!(!check_reduction_hint(&raw, &bad));
+            }
+            for i in 0..32 {
+                let mut bad = h; bad.remainder[i] ^= 1;
+                prop_assert!(!check_reduction_hint(&raw, &bad));
+            }
+            let mut overflowing = h; overflowing.quotient = [0xff; 17];
+            prop_assert!(!check_reduction_hint(&raw, &overflowing));
+        }
+    }
+
+    #[test]
+    fn reduction_hint_boundaries_and_canonical_remainder() {
+        for raw in [[0; L], [0xff; L]] {
+            assert!(check_reduction_hint(&raw, &hint(&raw)));
+        }
+        let raw = [0xff; L];
+        let mut h = hint(&raw);
+        let modulus = BigUint::from_bytes_be(&Fr::MODULUS.to_bytes_be());
+        let bad = (BigUint::from_bytes_be(&h.remainder) + &modulus).to_bytes_be();
+        h.remainder = [0; 32];
+        h.remainder[32 - bad.len()..].copy_from_slice(&bad);
+        let bad_q = (BigUint::from_bytes_be(&h.quotient) - BigUint::from(1u8)).to_bytes_be();
+        h.quotient = [0; 17];
+        h.quotient[17 - bad_q.len()..].copy_from_slice(&bad_q);
+        assert!(
+            !check_reduction_hint(&raw, &h),
+            "equal integer identity must reject a noncanonical remainder"
+        );
+    }
+
+    #[test]
+    fn hash_hint_checks_the_expanded_commitment() {
+        let msg = [0u8; 64];
+        let dst = b"bsb22-commitment";
+        let h = hint(&expand_message_xmd_sha256_l48(&msg, dst));
+        assert_eq!(
+            hash_to_field_bn254_fr_with_hint(&msg, dst, &h).unwrap(),
+            hash_to_field_bn254_fr(&msg, dst)
+        );
+        let mut other = msg;
+        other[0] = 1;
+        assert_eq!(
+            hash_to_field_bn254_fr_with_hint(&other, dst, &h),
+            Err(crate::errors::Groth16Error::Bsb22InvalidHashHint)
+        );
     }
 }

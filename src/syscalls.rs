@@ -102,9 +102,12 @@ mod inner {
     /// in the form of `&[&[u8]]`; `val_len` is the number of pairs.
     #[cfg(feature = "bsb22")]
     pub(crate) fn sha256(input: &[u8]) -> [u8; 32] {
-        use pinocchio::syscalls::sol_sha256;
+        sha256v(&[input])
+    }
 
-        let slices: [&[u8]; 1] = [input];
+    #[cfg(feature = "bsb22")]
+    pub(crate) fn sha256v(slices: &[&[u8]]) -> [u8; 32] {
+        use pinocchio::syscalls::sol_sha256;
         let mut out = [0u8; 32];
         // SAFETY: `slices` lives until after the syscall returns;
         // `out` is a fixed-size 32-byte buffer matching the SHA-256
@@ -165,9 +168,16 @@ mod inner {
     /// `sol_sha256` syscall, backed by the pure-Rust `sha2` crate.
     #[cfg(feature = "bsb22")]
     pub(crate) fn sha256(input: &[u8]) -> [u8; 32] {
+        sha256v(&[input])
+    }
+
+    #[cfg(feature = "bsb22")]
+    pub(crate) fn sha256v(inputs: &[&[u8]]) -> [u8; 32] {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
-        hasher.update(input);
+        for input in inputs {
+            hasher.update(input);
+        }
         hasher.finalize().into()
     }
 }

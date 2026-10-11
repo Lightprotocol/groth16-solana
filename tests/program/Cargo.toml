@@ -52,7 +52,7 @@ blake3 = { workspace = true }
 [build-dependencies]
 # gnark-vk: build.rs only parses vks and generates consts; the
 # runtime dependency above carries the bsb22 verifier feature.
-groth16-solana = { path = "../..", features = ["gnark-vk"] }
+groth16-solana = { path = "../..", features = ["gnark-vk", "bsb22"] }
 
 [dev-dependencies]
 # Mollusk CU-profiling harness (bench_cu.rs). Mollusk 0.3 is built on

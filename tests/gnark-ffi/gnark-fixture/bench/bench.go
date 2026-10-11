@@ -39,6 +39,8 @@ import (
 	"sync"
 
 	"github.com/consensys/gnark-crypto/ecc"
+	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
+	cryptohash "github.com/consensys/gnark-crypto/field/hash"
 	"github.com/consensys/gnark/backend/groth16"
 	groth16_bn254 "github.com/consensys/gnark/backend/groth16/bn254"
 	"github.com/consensys/gnark/constraint"
@@ -122,6 +124,7 @@ func assignment(withCommitment bool, n int) (frontend.Circuit, []*big.Int) {
 //	{plain,bsb22}_{N}_proof_c.bin
 //	{plain,bsb22}_{N}_public_inputs.bin  (N*32 bytes, big-endian)
 //	bsb22_{N}_commitment.bin, bsb22_{N}_pok.bin
+//	bsb22_{N}_hash_hint.bin (17-byte quotient + 32-byte remainder, big-endian)
 func GenerateAll(outDir string) error {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
@@ -209,6 +212,23 @@ func generate(outDir string, withCommitment bool, n int) error {
 	write := func(name string, data []byte) error {
 		return os.WriteFile(filepath.Join(outDir, label+"_"+name+".bin"), data, 0o644)
 	}
+	if withCommitment {
+		if len(bnProof.Commitments) != 1 {
+			return fmt.Errorf("%s: expected one commitment for hash hint", label)
+		}
+		expanded, err := cryptohash.ExpandMsgXmd(bnProof.Commitments[0].Marshal(), []byte("bsb22-commitment"), 48)
+		if err != nil {
+			return fmt.Errorf("%s: expand hash: %w", label, err)
+		}
+		quotient, remainder := new(big.Int), new(big.Int)
+		quotient.QuoRem(new(big.Int).SetBytes(expanded), fr.Modulus(), remainder)
+		hint := make([]byte, 49)
+		quotient.FillBytes(hint[:17])
+		remainder.FillBytes(hint[17:])
+		if err := write("hash_hint", hint); err != nil {
+			return err
+		}
+	}
 
 	vkFile, err := os.Create(filepath.Join(outDir, label+"_vk.bin"))
 	if err != nil {
@@ -236,10 +256,6 @@ func generate(outDir string, withCommitment bool, n int) error {
 	}
 
 	if withCommitment {
-		if len(bnProof.Commitments) != 1 {
-			return fmt.Errorf("%s: expected 1 proof commitment, got %d",
-				label, len(bnProof.Commitments))
-		}
 		cmt := bnProof.Commitments[0].RawBytes()
 		pok := bnProof.CommitmentPok.RawBytes()
 		if err := write("commitment", cmt[:]); err != nil {

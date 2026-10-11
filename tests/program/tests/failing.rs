@@ -98,7 +98,7 @@ fn splice(data: &mut [u8], range: std::ops::Range<usize>, bytes: &[u8]) {
 fn rejects_unknown_selector() {
     let (mollusk, program_id) = setup();
     let mut data = build_ix_data(&fixture("plain_1"));
-    *data.first_mut().unwrap() = 8; // first selector past the valid 0..=7 range
+    *data.first_mut().unwrap() = 24; // first selector past the valid 0..=23 range
     expect_err(
         &mollusk,
         program_id,
@@ -359,4 +359,87 @@ fn offsets_match_program_layout() {
     assert_eq!(TAIL, 1 + PROOF_LEN);
     assert_eq!(BSB22_COMMITMENT, 1 + PROOF_LEN..1 + PROOF_LEN + 64);
     assert_eq!(POK, 1 + PROOF_LEN + 64..1 + PROOF_LEN + 128);
+}
+
+#[test]
+fn optimized_rejects_invalid_inputs_and_commitment_points() {
+    let (mollusk, program_id) = setup();
+    for f in fixtures().into_iter().filter(|f| f.selector >= 8) {
+        let base = build_ix_data(&f);
+        for (range, replacement, error) in [
+            (
+                PROOF_A,
+                NOT_ON_CURVE_G1_BE.as_slice(),
+                Groth16Error::ProofVerificationFailed,
+            ),
+            (
+                BSB22_COMMITMENT,
+                G1_GENERATOR_BE.as_slice(),
+                if f.hash_hint.is_some() {
+                    Groth16Error::Bsb22InvalidHashHint
+                } else {
+                    Groth16Error::ProofVerificationFailed
+                },
+            ),
+            (
+                BSB22_COMMITMENT,
+                NOT_ON_CURVE_G1_BE.as_slice(),
+                if f.hash_hint.is_some() {
+                    Groth16Error::Bsb22InvalidHashHint
+                } else {
+                    Groth16Error::Bsb22InvalidCommitmentPoint
+                },
+            ),
+            (
+                POK,
+                G1_GENERATOR_BE.as_slice(),
+                Groth16Error::ProofVerificationFailed,
+            ),
+            (
+                POK,
+                NOT_ON_CURVE_G1_BE.as_slice(),
+                Groth16Error::CommitmentPokVerificationFailed,
+            ),
+            (
+                POK.end..POK.end + 32,
+                FR_MODULUS_BE.as_slice(),
+                Groth16Error::PublicInputGreaterThanFieldSize,
+            ),
+        ] {
+            let mut data = base.clone();
+            splice(&mut data, range, replacement);
+            expect_err(&mollusk, program_id, data, custom(error));
+        }
+        let mut data = base;
+        *data
+            .get_mut(POK.end..POK.end + f.nr_inputs * 32)
+            .unwrap()
+            .last_mut()
+            .unwrap() ^= 1;
+        expect_err(
+            &mollusk,
+            program_id,
+            data,
+            custom(Groth16Error::ProofVerificationFailed),
+        );
+    }
+}
+
+#[test]
+fn optimized_rejects_mutated_hash_hints() {
+    let (mollusk, program_id) = setup();
+    for f in fixtures().into_iter().filter(|f| f.hash_hint.is_some()) {
+        let base = build_ix_data(&f);
+        let hint_start = POK.end + f.nr_inputs * 32;
+        for byte in hint_start..base.len() {
+            let mut data = base.clone();
+            *data.get_mut(byte).unwrap() ^= 1;
+            expect_err(
+                &mollusk,
+                program_id,
+                data,
+                custom(Groth16Error::Bsb22InvalidHashHint),
+            );
+        }
+    }
 }
