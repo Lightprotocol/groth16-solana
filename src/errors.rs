@@ -71,6 +71,10 @@ pub enum Groth16Error {
     #[cfg(feature = "bsb22")]
     #[error("Bsb22InconsistentCommitmentState")]
     Bsb22InconsistentCommitmentState,
+    /// The supplied quotient/remainder does not describe the exact gnark hash reduction.
+    #[cfg(feature = "bsb22")]
+    #[error("Bsb22InvalidHashHint")]
+    Bsb22InvalidHashHint,
 }
 
 #[cfg(feature = "circom")]
@@ -116,6 +120,8 @@ impl From<Groth16Error> for u32 {
             Groth16Error::Bsb22InvalidCommitmentPoint => 20,
             #[cfg(feature = "bsb22")]
             Groth16Error::Bsb22InconsistentCommitmentState => 21,
+            #[cfg(feature = "bsb22")]
+            Groth16Error::Bsb22InvalidHashHint => 22,
         }
     }
 }

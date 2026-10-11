@@ -45,34 +45,46 @@ fn benchmark_totals() -> Vec<(String, usize, String)> {
 #[test]
 fn crate_docs_cu_table_matches_benchmarks() {
     let totals = benchmark_totals();
-    let plain: Vec<_> = totals.iter().filter(|(m, _, _)| m == "Groth16").collect();
-    let bsb22: Vec<_> = totals
+    let modes = [
+        "Groth16",
+        "Groth16-bsb22",
+        "Groth16-bsb22-opt",
+        "Groth16-bsb22-opt-hint",
+        "Groth16-bsb22-opt-cached",
+        "Groth16-bsb22-opt-hint-cached",
+    ];
+    let groups: Vec<Vec<_>> = modes
         .iter()
-        .filter(|(m, _, _)| m == "Groth16-bsb22")
+        .map(|mode| {
+            let group: Vec<_> = totals.iter().filter(|(m, _, _)| m == mode).collect();
+            assert_eq!(
+                group.len(),
+                4,
+                "expected 4 sections for {mode}, got {totals:?}"
+            );
+            group
+        })
         .collect();
-    assert_eq!(plain.len(), 4, "expected 4 plain sections, got {totals:?}");
-    assert_eq!(bsb22.len(), 4, "expected 4 bsb22 sections, got {totals:?}");
-
-    for ((_, n, plain_cu), (_, bsb22_n, bsb22_cu)) in plain.iter().zip(bsb22.iter()) {
-        assert_eq!(n, bsb22_n, "plain/bsb22 section order mismatch");
-        let row = format!("//! | {n} | {plain_cu} | {bsb22_cu} |");
+    for n in [1, 2, 4, 8] {
+        let mut row = format!("//! | {n} |");
+        for group in &groups {
+            let (_, _, cu) = group.iter().find(|(_, inputs, _)| *inputs == n).unwrap();
+            row.push_str(&format!(" {cu} |"));
+        }
         assert!(
             LIB_RS.contains(&row),
-            "src/lib.rs CU table is missing the row {row:?}; update the \
-             Benchmarks table in the crate docs and run `just readme`"
+            "src/lib.rs CU table is missing {row:?}; update it and run just readme"
         );
     }
-
-    // The crate-docs intro quotes the 1-input and 8-input endpoints as
-    // "<min>–<max> CU" ranges for both modes.
-    for group in [&plain, &bsb22] {
-        let (_, _, min) = group.first().expect("nonempty group");
-        let (_, _, max) = group.last().expect("nonempty group");
+    // The introduction reports ordinary, default BSB22, optimized and fully accelerated ranges.
+    for i in [0, 1, 2, 5] {
+        let group = groups.get(i).unwrap();
+        let (_, _, min) = group.first().unwrap();
+        let (_, _, max) = group.last().unwrap();
         let range = format!("{min}–{max} CU");
         assert!(
             LIB_RS.contains(&range),
-            "src/lib.rs intro is missing the CU range {range:?}; update \
-             the crate docs and run `just readme`"
+            "src/lib.rs intro is missing {range:?}"
         );
     }
 }

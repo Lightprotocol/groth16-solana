@@ -1,7 +1,9 @@
 //! Groth16 zero-knowledge proof verification with Solana alt_bn128 syscalls.
 //!
-//! A plain Groth16 verify costs 78,293–108,762 CU and a BSB22 verify
-//! 134,764–165,236 CU, for 1 to 8 public inputs (see
+//! A plain Groth16 verify costs 78,324–108,789 CU. BSB22
+//! `verify()` costs 134,795–165,258 CU; `verify_opt()` costs
+//! 119,286–150,085 CU. With both optional accelerators it costs
+//! 117,600–148,176 CU, for 1 to 8 public inputs (see
 //! [Benchmarks](#benchmarks)).
 //!
 //! The syscalls ship with Solana 1.18 onward and are active on mainnet-beta.
@@ -23,7 +25,7 @@
 //! # Features
 //!
 //! - `bsb22` — verifies gnark proofs that include a single BSB22
-//!   (Bowe-Sankaranarayanan-Bonneau 2022) Pedersen commitment, via
+//!   (Belling-Soleimanian-Begassat 2022) Pedersen commitment, via
 //!   `Groth16Verifier::new_with_commitment`. Every gnark circuit takes this
 //!   shape once it uses `std/lookup/logderivlookup` or an emulated-field
 //!   range check: gnark's `multicommit` merges the deferred commits into
@@ -40,15 +42,30 @@
 //!
 //! # Benchmarks
 //!
-//! End-to-end verification cost (proof parsing, verifier construction,
-//! `verify()`) in compute units:
+//! End-to-end verification cost (proof parsing, verifier construction, verification)
+//! in compute units. Every column verifies one proof at a time.
 //!
-//! | Public inputs | Groth16 | Groth16-BSB22 |
-//! |--------------:|--------:|--------------:|
-//! | 1 | 78,293 | 134,764 |
-//! | 2 | 82,704 | 139,180 |
-//! | 4 | 91,448 | 147,921 |
-//! | 8 | 108,762 | 165,236 |
+//! | Public inputs | Groth16 | BSB22 | verify_opt | With hint | With cached key | With both |
+//! |--------------:|--------:|------:|-----------:|----------:|----------------:|----------:|
+//! | 1 | 78,324 | 134,795 | 119,286 | 118,244 | 118,641 | 117,600 |
+//! | 2 | 82,732 | 139,201 | 123,739 | 122,700 | 123,063 | 122,022 |
+//! | 4 | 91,472 | 147,939 | 132,574 | 131,537 | 131,833 | 130,795 |
+//! | 8 | 108,789 | 165,258 | 150,085 | 149,045 | 149,216 | 148,176 |
+//!
+//! `verify_opt()` uses the existing proof and instruction payload. For more
+//! savings, `verify_opt_with_options()` accepts a checked reduction hint and/or
+//! a pinned key digest. The hint appends 49 bytes: a 17-byte big-endian quotient
+//! followed by a 32-byte canonical remainder for gnark's 48-byte SHA-256 XMD
+//! expansion of the commitment with DST `bsb22-commitment`.
+//!
+//! Generate the digest with `Groth16Verifyingkey::verify_opt_key_hash()` in a
+//! build script and pin it alongside its matching key. It adds no instruction
+//! data and must not be accepted from the prover. See `tests/program/build.rs`
+//! and `tests/gnark-ffi/gnark-fixture/bench/bench.go` for complete examples.
+//!
+//! `verify()` retains its separate pairing checks and error diagnostics.
+//! The optimized path reports `ProofVerificationFailed` when its combined
+//! pairing equation fails; malformed hints report `Bsb22InvalidHashHint`.
 
 #![no_std]
 

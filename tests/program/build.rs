@@ -10,14 +10,14 @@
 // committed files. The only requirement is a Go toolchain, which
 // tests/gnark-ffi already needs.
 
-use groth16_solana::vk::gnark::generate_bsb22_vk_file;
+use groth16_solana::vk::gnark::{generate_bsb22_vk_file, parse_gnark_vk_bytes};
 use std::path::PathBuf;
 use std::process::Command;
 
 const MODES: [&str; 2] = ["plain", "bsb22"];
 const PUBLIC_INPUT_COUNTS: [usize; 4] = [1, 2, 4, 8];
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let gnark_dir = manifest_dir
         .parent()
@@ -56,6 +56,18 @@ fn main() {
                 &format!("VK_{}", label.to_uppercase()),
             )
             .unwrap_or_else(|e| panic!("generate vk const for {label}: {e:?}"));
+            if mode == "bsb22" {
+                let vk = parse_gnark_vk_bytes(&std::fs::read(&vk_path)?)?;
+                let hash = vk.as_borrowed().verify_opt_key_hash()?;
+                let path = out_dir.join(format!("vk_{label}.rs"));
+                let mut source = std::fs::read_to_string(&path)?;
+                source.push_str(&format!(
+                    "\npub const VK_{}_KEY_HASH: [u8; 32] = {:?};\n",
+                    label.to_uppercase(),
+                    hash
+                ));
+                std::fs::write(path, source)?;
+            }
         }
     }
 
@@ -64,4 +76,5 @@ fn main() {
     println!("cargo:rerun-if-changed=../gnark-ffi/gnark-fixture/cmd/benchgen");
     println!("cargo:rerun-if-changed=../gnark-ffi/gnark-fixture/go.mod");
     println!("cargo:rerun-if-changed=../gnark-ffi/gnark-fixture/go.sum");
+    Ok(())
 }

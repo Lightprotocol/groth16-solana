@@ -201,7 +201,14 @@ mod tests {
                 vk,
             )
             .expect("new_with_commitment");
-            verifier.verify()
+            let standard = verifier.verify();
+            let optimized = verifier.verify_opt();
+            assert_eq!(
+                optimized.is_ok(),
+                standard.is_ok(),
+                "verification methods disagree: standard={standard:?}, optimized={optimized:?}",
+            );
+            standard
         }
     }
 

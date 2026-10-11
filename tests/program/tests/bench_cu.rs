@@ -46,10 +46,12 @@ fn bench_cu() {
             under mollusk against the profiled build of `tests/program`. The matrix \
             covers plain Groth16 (`Groth16Verifier::new`) and BSB22 single-commitment proofs \
             (`Groth16Verifier::new_with_commitment`, gnark lookup circuits), each verified \
-            with 1, 2, 4, and 8 public inputs. Proofs and verifying keys are regenerated \
+            with 1, 2, 4, and 8 public inputs. BSB22 fixtures are checked using both \
+            `verify()` and the single-proof `verify_opt()` method, with all combinations \
+            of a checked 49-byte hash-reduction hint and a pinned key digest. Proofs and verifying keys are regenerated \
             deterministically by build.rs (seeded gnark setup, see \
             tests/gnark-ffi/gnark-fixture/bench). `verify`/`verify_with_bsb22_commitment` is \
-            proof parsing plus Groth16Verifier construction plus `verify()`."
+            proof parsing plus Groth16Verifier construction plus the selected verification method."
             .into(),
         output_path: OUTPUT_PATH.into(),
         regenerate_command: Some(
@@ -64,6 +66,21 @@ fn bench_cu() {
         let plural = if f.nr_inputs == 1 { "" } else { "s" };
         let section = match f.commitment {
             None => format!("groth16 - {} public input{}", f.nr_inputs, plural),
+            Some(_) if f.selector >= 20 => format!(
+                "groth16-bsb22-opt-hint-cached - {} public input{}",
+                f.nr_inputs, plural
+            ),
+            Some(_) if f.selector >= 16 => format!(
+                "groth16-bsb22-opt-cached - {} public input{}",
+                f.nr_inputs, plural
+            ),
+            Some(_) if f.selector >= 12 => format!(
+                "groth16-bsb22-opt-hint - {} public input{}",
+                f.nr_inputs, plural
+            ),
+            Some(_) if f.selector >= 8 => {
+                format!("groth16-bsb22-opt - {} public input{}", f.nr_inputs, plural)
+            }
             Some(_) => format!("groth16-bsb22 - {} public input{}", f.nr_inputs, plural),
         };
 
