@@ -48,23 +48,23 @@ Regenerate with `cargo build-sbf --manifest-path tests/program/Cargo.toml -- --f
 
 | Function                       |   Total CU |     Net CU |
 | ------------------------------ | ---------- | ---------- |
-| `verify_with_bsb22_commitment` |    134,764 |    134,764 |
+| `verify_with_bsb22_commitment` |    134,766 |    134,766 |
 
 ## 6. Groth16-bsb22 - 2 public inputs
 
 | Function                       |   Total CU |     Net CU |
 | ------------------------------ | ---------- | ---------- |
-| `verify_with_bsb22_commitment` |    139,180 |    139,180 |
+| `verify_with_bsb22_commitment` |    139,182 |    139,182 |
 
 ## 7. Groth16-bsb22 - 4 public inputs
 
 | Function                       |   Total CU |     Net CU |
 | ------------------------------ | ---------- | ---------- |
-| `verify_with_bsb22_commitment` |    147,921 |    147,921 |
+| `verify_with_bsb22_commitment` |    147,923 |    147,923 |
 
 ## 8. Groth16-bsb22 - 8 public inputs
 
 | Function                       |   Total CU |     Net CU |
 | ------------------------------ | ---------- | ---------- |
-| `verify_with_bsb22_commitment` |    165,236 |    165,236 |
+| `verify_with_bsb22_commitment` |    165,238 |    165,238 |
 
