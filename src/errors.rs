@@ -50,9 +50,9 @@ pub enum Groth16Error {
     #[cfg(feature = "gnark-vk")]
     #[error("Bsb22CommittedPublicInputsUnsupported")]
     Bsb22CommittedPublicInputsUnsupported,
-    /// Reading the vk.bin or writing the generated Rust file failed in
-    /// `generate_bsb22_vk_file` — a filesystem problem (wrong path,
-    /// permissions), not a malformed verifying key.
+    /// Reading the vk.bin or proving key, or writing the generated Rust
+    /// file, failed in `generate_bsb22_vk_file` — a filesystem problem
+    /// (wrong path, permissions), not a malformed verifying key.
     #[cfg(feature = "gnark-vk")]
     #[error("Bsb22VkFileIoFailed")]
     Bsb22VkFileIoFailed,
@@ -71,6 +71,13 @@ pub enum Groth16Error {
     #[cfg(feature = "bsb22")]
     #[error("Bsb22InconsistentCommitmentState")]
     Bsb22InconsistentCommitmentState,
+    /// The vk was declared `SetupKind::Production` but its delta equals
+    /// its gamma: the setup had no phase-2 contribution, so anyone can
+    /// build a proof for any public inputs from the vk alone. Declare
+    /// it `SetupKind::InsecureTest` if it is a test setup.
+    #[cfg(feature = "gnark-vk")]
+    #[error("ForgeableProductionVk")]
+    ForgeableProductionVk,
 }
 
 #[cfg(feature = "circom")]
@@ -116,6 +123,8 @@ impl From<Groth16Error> for u32 {
             Groth16Error::Bsb22InvalidCommitmentPoint => 20,
             #[cfg(feature = "bsb22")]
             Groth16Error::Bsb22InconsistentCommitmentState => 21,
+            #[cfg(feature = "gnark-vk")]
+            Groth16Error::ForgeableProductionVk => 22,
         }
     }
 }
