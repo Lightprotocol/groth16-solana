@@ -77,6 +77,21 @@ check.
     the CU table in the src/lib.rs crate docs (rendered into README.md
     by cargo-rdme) to the BENCHMARKS.md totals
 
+### Circom proof conversion (tests/circom_proof_conversion.rs)
+
+`cargo test -p groth16-solana --features circom --test circom_proof_conversion`
+
+These also run with `cargo test --workspace`, where the rust-vk member
+enables `circom`. The converter accepts circom-prover's integer
+coordinates and validates them as Arkworks 0.6 points.
+
+1. `converts_generators_to_expected_verifier_bytes`
+2. `preserves_points_at_infinity`
+3. `rejects_coordinate_larger_than_32_bytes`
+4. `rejects_coordinate_equal_to_base_field_modulus`
+5. `rejects_g1_point_off_curve`
+6. `rejects_g2_point_off_curve`
+
 ### FFI differential tests (tests/gnark-ffi, requires Go)
 
 `cargo test -p groth16-solana-gnark-ffi`, plus `go test ./...` in

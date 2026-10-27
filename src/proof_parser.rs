@@ -25,7 +25,9 @@ pub mod circom_prover {
     use crate::errors::Groth16Error;
     use alloc::vec;
     use alloc::vec::Vec;
-    use ark_serialize::{CanonicalSerialize, Compress};
+    use ark_bn254::{Fq, Fq2, G1Affine, G2Affine};
+    use ark_ff::Zero;
+    use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Valid};
     use core::ops::Neg;
     use solana_bn254::compression::prelude::convert_endianness;
 
@@ -54,22 +56,60 @@ pub mod circom_prover {
     /// point.
     pub type CompressedProofBytes = ([u8; 32], [u8; 64], [u8; 32]);
 
+    fn convert_coordinate(coordinate_le: &[u8]) -> Result<Fq, Groth16Error> {
+        let mut coordinate_padded = [0u8; 32];
+        coordinate_padded
+            .get_mut(..coordinate_le.len())
+            .ok_or(Groth16Error::ProofConversionError)?
+            .copy_from_slice(coordinate_le);
+        Ok(Fq::deserialize_uncompressed(&coordinate_padded[..])?)
+    }
+
+    fn convert_g1(point: &::circom_prover::prover::circom::G1) -> Result<G1Affine, Groth16Error> {
+        let x = convert_coordinate(&point.x.to_bytes_le())?;
+        let y = convert_coordinate(&point.y.to_bytes_le())?;
+        let affine = if x.is_zero() && y.is_zero() {
+            G1Affine::identity()
+        } else {
+            G1Affine::new_unchecked(x, y)
+        };
+        affine.check()?;
+        Ok(affine)
+    }
+
+    fn convert_g2(point: &::circom_prover::prover::circom::G2) -> Result<G2Affine, Groth16Error> {
+        let x = Fq2::new(
+            convert_coordinate(&point.x[0].to_bytes_le())?,
+            convert_coordinate(&point.x[1].to_bytes_le())?,
+        );
+        let y = Fq2::new(
+            convert_coordinate(&point.y[0].to_bytes_le())?,
+            convert_coordinate(&point.y[1].to_bytes_le())?,
+        );
+        let affine = if x.is_zero() && y.is_zero() {
+            G2Affine::identity()
+        } else {
+            G2Affine::new_unchecked(x, y)
+        };
+        affine.check()?;
+        Ok(affine)
+    }
+
     pub fn convert_proof(
         circom_proof: &::circom_prover::prover::circom::Proof,
     ) -> Result<ProofBytes, Groth16Error> {
-        // Convert to arkworks proof
-        let ark_proof: ark_groth16::Proof<ark_bn254::Bn254> = circom_proof.clone().into();
+        // circom-prover uses arkworks 0.5 internally. Convert its integer
+        // coordinates into arkworks 0.6 points before serializing.
+        let proof_a_neg = convert_g1(&circom_proof.a)?.neg();
+        let proof_b_point = convert_g2(&circom_proof.b)?;
+        let proof_c_point = convert_g1(&circom_proof.c)?;
 
         // Serialize proof_a: negate it, serialize to LE, convert to BE
         let mut proof_a_serialized = [0u8; 65];
-        ark_proof
-            .a
-            .neg()
+        proof_a_neg
             .x
             .serialize_with_mode(&mut proof_a_serialized[..32], Compress::No)?;
-        ark_proof
-            .a
-            .neg()
+        proof_a_neg
             .y
             .serialize_with_mode(&mut proof_a_serialized[32..64], Compress::No)?;
 
@@ -82,9 +122,7 @@ pub mod circom_prover {
 
         // Serialize proof_b: serialize to LE, convert to BE
         let mut proof_b_serialized = [0u8; 129];
-        ark_proof
-            .b
-            .serialize_with_mode(&mut proof_b_serialized[..], Compress::No)?;
+        proof_b_point.serialize_with_mode(&mut proof_b_serialized[..], Compress::No)?;
 
         // Convert LE to BE using convert_endianness::<64, 128> (reverses each 64-byte chunk)
         let proof_b: [u8; 128] = convert_endianness::<64, 128>(
@@ -95,9 +133,7 @@ pub mod circom_prover {
 
         // Serialize proof_c: serialize to LE, convert to BE
         let mut proof_c_serialized = [0u8; 65];
-        ark_proof
-            .c
-            .serialize_with_mode(&mut proof_c_serialized[..], Compress::No)?;
+        proof_c_point.serialize_with_mode(&mut proof_c_serialized[..], Compress::No)?;
 
         // Convert LE to BE using convert_endianness::<32, 64> (reverses each 32-byte chunk)
         let proof_c: [u8; 64] = convert_endianness::<32, 64>(
