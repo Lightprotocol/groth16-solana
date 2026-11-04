@@ -7,8 +7,7 @@
 //!
 //! ```rust,ignore
 //! use groth16_solana::vk::circom::generate_vk_file;
-//! use groth16_solana::vk::setup::{ProvingKeySource, SetupKind};
-//! use std::path::Path;
+//! use groth16_solana::vk::setup::SetupKind;
 //!
 //! fn main() {
 //!     generate_vk_file(
@@ -16,14 +15,14 @@
 //!         "src",
 //!         "verifying_key.rs",
 //!         SetupKind::Production,
-//!         ProvingKeySource::File(Path::new("circuit_final.zkey")),
 //!     ).unwrap();
 //! }
 //! ```
 
 extern crate std;
 
-use crate::vk::setup::{self, ProvingKeySource, SetupKind};
+use crate::groth16::Groth16Verifyingkey;
+use crate::vk::setup::{self, SetupKind};
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -93,6 +92,19 @@ fn process_g1_component(component: &str) -> Result<Vec<u8>, VkParseError> {
     bigint_string_to_be_bytes(component, 32)
 }
 
+/// `bytes` as a fixed-size array; fails when a point in the JSON has
+/// the wrong number of coordinates.
+fn fixed_size<const N: usize>(bytes: &[u8], field_name: &str) -> Result<[u8; N], VkParseError> {
+    bytes.try_into().map_err(|_| {
+        VkParseError::InvalidData(format!(
+            "{} encodes to {} bytes, expected {}",
+            field_name,
+            bytes.len(),
+            N
+        ))
+    })
+}
+
 /// snarkjs stores points in projective form with a trailing z
 /// component ("1" for G1, ["1", "0"] for G2); the generated const only
 /// needs the affine part. Drops the trailing component, returning a
@@ -155,19 +167,17 @@ fn process_g2_component(components: &[String]) -> Result<(Vec<u8>, Vec<u8>), VkP
 ///
 /// * `json_content` - The JSON content as a string
 /// * `setup` - Where the setup randomness came from
-/// * `proving_key_sha256` - SHA-256 of the matching proving key (zkey)
 ///
 /// # Returns
 ///
 /// A String containing the generated Rust code defining a `Groth16Verifyingkey` constant
-/// and the `VERIFYINGKEY_PROVING_KEY_SHA256` / `VERIFYINGKEY_INSECURE_TEST_SETUP`
+/// and the `VERIFYINGKEY_VK_SHA256` / `VERIFYINGKEY_INSECURE_TEST_SETUP`
 /// consts (see [`crate::vk::setup`]). Fails with
 /// [`VkParseError::ForgeableProductionVk`] when `setup` is
 /// [`SetupKind::Production`] but delta equals gamma.
 pub fn parse_vk_json_to_rust_string(
     json_content: &str,
     setup: SetupKind,
-    proving_key_sha256: &[u8; 32],
 ) -> Result<String, VkParseError> {
     let raw_vk: RawVerifyingKey = serde_json::from_str(json_content)?;
 
@@ -264,6 +274,7 @@ pub fn parse_vk_json_to_rust_string(
 
     // Process vk_ic - &[[u8; 64]]
     output.push_str("\tvk_ic: &[\n");
+    let mut ic = Vec::with_capacity(raw_vk.ic.len());
     for (point_index, point) in raw_vk.ic.iter().enumerate() {
         output.push_str("\t\t[");
         let mut point_bytes = Vec::new();
@@ -279,6 +290,10 @@ pub fn parse_vk_json_to_rust_string(
                 .join(", "),
         );
         output.push_str("],\n");
+        ic.push(fixed_size::<64>(
+            &point_bytes,
+            &format!("IC[{}]", point_index),
+        )?);
     }
     output.push_str("\t],\n\n");
 
@@ -286,7 +301,17 @@ pub fn parse_vk_json_to_rust_string(
     output.push_str("\tvk_commitment: None,\n");
 
     output.push_str("};\n");
-    let metadata = setup::metadata_rust_source(&output, "VERIFYINGKEY", setup, proving_key_sha256);
+    let vk = Groth16Verifyingkey {
+        nr_pubinputs,
+        vk_alpha_g1: fixed_size(&alpha_bytes, "vk_alpha_1")?,
+        vk_beta_g2: fixed_size(&beta_bytes, "vk_beta_2")?,
+        vk_gamma_g2: fixed_size(&gamma_bytes, "vk_gamma_2")?,
+        vk_delta_g2: fixed_size(&delta_bytes, "vk_delta_2")?,
+        vk_ic: &ic,
+        vk_commitment: None,
+    };
+    let metadata =
+        setup::metadata_rust_source(&output, "VERIFYINGKEY", setup, &setup::vk_sha256(&vk));
     output.push_str(&metadata);
 
     Ok(output)
@@ -305,15 +330,13 @@ pub fn parse_vk_json_to_rust_string(
 /// * `setup` - Where the setup randomness came from; an
 ///   [`SetupKind::InsecureTest`] vk compiles only in a crate that
 ///   enables an `insecure-test-setup` feature
-/// * `proving_key` - The zkey whose SHA-256 goes into the generated file
 ///
 /// # Example
 ///
 /// ```rust,ignore
 /// // In build.rs
 /// use groth16_solana::vk::circom::generate_vk_file;
-/// use groth16_solana::vk::setup::{ProvingKeySource, SetupKind};
-/// use std::path::Path;
+/// use groth16_solana::vk::setup::SetupKind;
 ///
 /// fn main() {
 ///     generate_vk_file(
@@ -321,7 +344,6 @@ pub fn parse_vk_json_to_rust_string(
 ///         "src",
 ///         "verifying_key.rs",
 ///         SetupKind::Production,
-///         ProvingKeySource::File(Path::new("circuit_final.zkey")),
 ///     ).unwrap();
 /// }
 /// ```
@@ -330,14 +352,12 @@ pub fn generate_vk_file(
     output_dir: impl AsRef<Path>,
     output_filename: &str,
     setup: SetupKind,
-    proving_key: ProvingKeySource<'_>,
 ) -> Result<(), VkParseError> {
     // Read JSON file
     let json_content = fs::read_to_string(json_path.as_ref())?;
 
     // Parse and generate Rust code
-    let proving_key_sha256 = proving_key.sha256()?;
-    let rust_code = parse_vk_json_to_rust_string(&json_content, setup, &proving_key_sha256)?;
+    let rust_code = parse_vk_json_to_rust_string(&json_content, setup)?;
 
     // Create output directory if it doesn't exist
     fs::create_dir_all(output_dir.as_ref())?;

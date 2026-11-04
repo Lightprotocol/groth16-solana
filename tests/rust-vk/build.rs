@@ -1,16 +1,13 @@
 use groth16_solana::vk::circom::generate_vk_file;
-use groth16_solana::vk::setup::{ProvingKeySource, SetupKind};
-use std::path::Path;
+use groth16_solana::vk::setup::SetupKind;
 
 fn main() {
     println!("cargo:rerun-if-changed=build/verification_key.json");
-    println!("cargo:rerun-if-changed=build/compressed_account_merkle_proof_final.zkey");
     println!("cargo:rerun-if-changed=build/compressed_account_merkle_proof_js");
 
     // Generate the verifying key Rust file from the JSON
     // This will be generated after running the circuit setup scripts
     let vk_json_path = "./build/verification_key.json";
-    let zkey_path = "./build/compressed_account_merkle_proof_final.zkey";
     let output_dir = "./src";
     let output_file = "verifying_key.rs";
 
@@ -24,7 +21,6 @@ fn main() {
             output_dir,
             output_file,
             SetupKind::InsecureTest,
-            ProvingKeySource::File(Path::new(zkey_path)),
         )
         .expect("Failed to generate verifying key Rust file");
         println!("cargo:warning=Generated verifying_key.rs from verification_key.json");

@@ -44,12 +44,12 @@ at your own risk.
 
 ## Verifying key setup metadata
 
-Both vk generators take a `SetupKind` and the proving key, and write
-next to the vk const:
+Both vk generators take a `SetupKind` and write next to the vk const:
 
-- `<NAME>_PROVING_KEY_SHA256` — a prover hashes the proving key it is
-  about to load (`vk::setup::proving_key_sha256`) and compares, so a
-  stale or mismatched key fails before proving.
+- `<NAME>_VK_SHA256` — SHA-256 of the verifying key over a fixed byte
+  encoding (`vk::setup::vk_sha256`), independent of whether it came
+  from a snarkjs JSON or a gnark vk.bin. Anyone holding the vk
+  recomputes it and compares it to the value read from a program.
 - `<NAME>_INSECURE_TEST_SETUP` — `true` for `SetupKind::InsecureTest`
   (seeded or otherwise untrusted setup randomness: whoever knows it
   can make the vk accept a proof for any public inputs). Such a vk
