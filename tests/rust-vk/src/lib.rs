@@ -88,18 +88,16 @@ fn add_merkle_proof_to_circuit_inputs(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use groth16_solana::vk::setup::proving_key_sha256;
+    use groth16_solana::vk::setup::vk_sha256;
 
     #[test]
     fn test_compressed_account_proof_with_groth16_solana() {
         let zkey_path = "./build/compressed_account_merkle_proof_final.zkey".to_string();
 
-        // Prover-side check: the zkey about to be loaded must be the one
-        // the baked verifying key was generated with.
+        // The generated digest is recomputable from the baked const.
         assert_eq!(
-            proving_key_sha256(&zkey_path).unwrap(),
-            verifying_key::VERIFYINGKEY_PROVING_KEY_SHA256,
-            "zkey does not match the baked verifying key; rerun the circuit build"
+            vk_sha256(&verifying_key::VERIFYINGKEY),
+            verifying_key::VERIFYINGKEY_VK_SHA256
         );
 
         // Create compressed account

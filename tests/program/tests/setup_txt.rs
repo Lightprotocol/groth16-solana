@@ -1,11 +1,12 @@
 //! The `*_SETUP_TXT` markers are present in the SBF binary: reading the
 //! built .so (as a post-deployment check would read a
 //! `solana program dump`) finds one marker per baked vk, each flagged
-//! as an insecure test setup and containing the SHA-256 of its fixture
-//! proving key. Requires the .so from `cargo build-sbf` (plain or
-//! `--features profile-program`).
+//! as an insecure test setup and containing the vk SHA-256 recomputed
+//! from its fixture vk.bin. Requires the .so from `cargo build-sbf`
+//! (plain or `--features profile-program`).
 
-use groth16_solana::vk::setup::{find_setup_txts, proving_key_sha256};
+use groth16_solana::vk::gnark::parse_gnark_vk_bytes;
+use groth16_solana::vk::setup::{find_setup_txts, vk_sha256};
 
 const PROGRAM_SO: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -26,15 +27,20 @@ fn setup_txt_readable_from_program_binary() {
     let mut expected: Vec<(String, bool, [u8; 32])> = LABELS
         .iter()
         .map(|label| {
-            let pk = proving_key_sha256(format!("{FIXTURE_DIR}/{label}_pk.bin")).unwrap();
-            (format!("VK_{}", label.to_uppercase()), true, pk)
+            let bytes = std::fs::read(format!("{FIXTURE_DIR}/{label}_vk.bin")).unwrap();
+            let vk = parse_gnark_vk_bytes(&bytes).unwrap();
+            (
+                format!("VK_{}", label.to_uppercase()),
+                true,
+                vk_sha256(&vk.as_borrowed()),
+            )
         })
         .collect();
     expected.sort();
 
     let found: Vec<(String, bool, [u8; 32])> = found
         .into_iter()
-        .map(|s| (s.name, s.insecure_test_setup, s.proving_key_sha256))
+        .map(|s| (s.name, s.insecure_test_setup, s.vk_sha256))
         .collect();
     assert_eq!(found, expected);
 }

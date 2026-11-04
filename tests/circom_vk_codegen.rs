@@ -6,8 +6,9 @@
 //! production.
 #![cfg(feature = "circom-vk")]
 
+use groth16_solana::groth16::Groth16Verifyingkey;
 use groth16_solana::vk::circom::{parse_vk_json_to_rust_string, VkParseError};
-use groth16_solana::vk::setup::SetupKind;
+use groth16_solana::vk::setup::{vk_sha256, SetupKind};
 
 /// Minimal well-formed snarkjs-shaped JSON: projective points with a
 /// trailing z component, one IC entry (constant K[0] only, so zero
@@ -33,8 +34,7 @@ fn contributed_vk_json() -> String {
 
 #[test]
 fn generates_const_with_vk_commitment_none() {
-    let src =
-        parse_vk_json_to_rust_string(MINIMAL_VK_JSON, SetupKind::InsecureTest, &[0u8; 32]).unwrap();
+    let src = parse_vk_json_to_rust_string(MINIMAL_VK_JSON, SetupKind::InsecureTest).unwrap();
     assert!(src.contains("pub const VERIFYINGKEY: Groth16Verifyingkey"));
     assert!(src.contains("nr_pubinputs: 0,"));
     assert!(src.contains("vk_commitment: None,"));
@@ -42,29 +42,76 @@ fn generates_const_with_vk_commitment_none() {
 
 #[test]
 fn insecure_test_setup_emits_flag_header_and_compile_guard() {
-    let src =
-        parse_vk_json_to_rust_string(MINIMAL_VK_JSON, SetupKind::InsecureTest, &[3u8; 32]).unwrap();
+    let src = parse_vk_json_to_rust_string(MINIMAL_VK_JSON, SetupKind::InsecureTest).unwrap();
     assert!(src.contains("// INSECURE TEST SETUP:"));
-    assert!(src.contains("pub const VERIFYINGKEY_PROVING_KEY_SHA256: [u8; 32] = [3u8, 3u8,"));
+    assert!(src.contains("pub const VERIFYINGKEY_VK_SHA256: [u8; 32] = ["));
     assert!(src.contains("pub const VERIFYINGKEY_INSECURE_TEST_SETUP: bool = true;"));
     assert!(src.contains("#[cfg(not(feature = \"insecure-test-setup\"))]\ncompile_error!("));
 }
 
 #[test]
 fn production_setup_emits_flag_without_compile_guard() {
-    let src =
-        parse_vk_json_to_rust_string(&contributed_vk_json(), SetupKind::Production, &[3u8; 32])
-            .unwrap();
-    assert!(src.contains("pub const VERIFYINGKEY_PROVING_KEY_SHA256: [u8; 32] = [3u8, 3u8,"));
+    let src = parse_vk_json_to_rust_string(&contributed_vk_json(), SetupKind::Production).unwrap();
+    assert!(src.contains("pub const VERIFYINGKEY_VK_SHA256: [u8; 32] = ["));
     assert!(src.contains("pub const VERIFYINGKEY_INSECURE_TEST_SETUP: bool = false;"));
     assert!(!src.contains("INSECURE TEST SETUP:"));
     assert!(!src.contains("compile_error!"));
 }
 
+/// Each small integer as a 32-byte big-endian limb, concatenated.
+fn limbs<const N: usize>(values: &[u8]) -> [u8; N] {
+    values
+        .iter()
+        .flat_map(|&v| [0u8; 31].into_iter().chain([v]))
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap()
+}
+
+#[test]
+fn vk_sha256_const_matches_parsed_points() {
+    // G1 (x, y) -> x || y; G2 ((x.c0, x.c1), (y.c0, y.c1)) ->
+    // x.c1 || x.c0 || y.c1 || y.c0, the alt_bn128 syscall layout.
+    let g2 = limbs::<128>(&[2, 1, 4, 3]);
+    let ic = [limbs::<64>(&[1, 2])];
+    let vk = Groth16Verifyingkey {
+        nr_pubinputs: 0,
+        vk_alpha_g1: limbs(&[1, 2]),
+        vk_beta_g2: g2,
+        vk_gamma_g2: g2,
+        vk_delta_g2: g2,
+        vk_ic: &ic,
+        vk_commitment: None,
+    };
+    let digest = vk_sha256(&vk)
+        .iter()
+        .map(|b| format!("{b}u8"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let src = parse_vk_json_to_rust_string(MINIMAL_VK_JSON, SetupKind::InsecureTest).unwrap();
+    assert!(src.contains(&format!(
+        "pub const VERIFYINGKEY_VK_SHA256: [u8; 32] = [{digest}];"
+    )));
+}
+
+#[test]
+fn rejects_g1_point_with_extra_coordinate() {
+    let json = MINIMAL_VK_JSON.replace(
+        r#""vk_alpha_1": ["1", "2", "1"]"#,
+        r#""vk_alpha_1": ["1", "2", "3", "1"]"#,
+    );
+    let err = parse_vk_json_to_rust_string(&json, SetupKind::InsecureTest).unwrap_err();
+    let msg = format!("{}", err);
+    assert!(
+        msg.contains("vk_alpha_1 encodes to 96 bytes, expected 64"),
+        "unexpected error: {}",
+        msg
+    );
+}
+
 #[test]
 fn rejects_production_vk_with_delta_equal_gamma() {
-    let err = parse_vk_json_to_rust_string(MINIMAL_VK_JSON, SetupKind::Production, &[0u8; 32])
-        .unwrap_err();
+    let err = parse_vk_json_to_rust_string(MINIMAL_VK_JSON, SetupKind::Production).unwrap_err();
     assert!(
         matches!(err, VkParseError::ForgeableProductionVk),
         "unexpected error: {}",
@@ -75,7 +122,7 @@ fn rejects_production_vk_with_delta_equal_gamma() {
 #[test]
 fn rejects_empty_ic() {
     let json = MINIMAL_VK_JSON.replace(r#"[["1", "2", "1"]]"#, "[]");
-    let err = parse_vk_json_to_rust_string(&json, SetupKind::InsecureTest, &[0u8; 32]).unwrap_err();
+    let err = parse_vk_json_to_rust_string(&json, SetupKind::InsecureTest).unwrap_err();
     let msg = format!("{}", err);
     assert!(msg.contains("IC is empty"), "unexpected error: {}", msg);
 }
@@ -83,7 +130,7 @@ fn rejects_empty_ic() {
 #[test]
 fn rejects_empty_point_coordinates() {
     let json = MINIMAL_VK_JSON.replace(r#""vk_alpha_1": ["1", "2", "1"]"#, r#""vk_alpha_1": []"#);
-    let err = parse_vk_json_to_rust_string(&json, SetupKind::InsecureTest, &[0u8; 32]).unwrap_err();
+    let err = parse_vk_json_to_rust_string(&json, SetupKind::InsecureTest).unwrap_err();
     let msg = format!("{}", err);
     assert!(
         msg.contains("vk_alpha_1 is empty"),

@@ -1,22 +1,26 @@
 //! Setup metadata the vk generators write next to each verifying key.
 //!
 //! Both generators ([`crate::vk::circom`] and [`crate::vk::gnark`])
-//! take a [`SetupKind`] and a [`ProvingKeySource`] and write, after
-//! the `Groth16Verifyingkey` const:
+//! take a [`SetupKind`] and write, after the `Groth16Verifyingkey`
+//! const:
 //!
 //! ```rust,ignore
-//! /// SHA-256 of the proving key file this verifying key was generated with.
-//! pub const VERIFYINGKEY_PROVING_KEY_SHA256: [u8; 32] = [..];
+//! /// SHA-256 of the verifying key above, as encoded by `vk_sha256`.
+//! pub const VERIFYINGKEY_VK_SHA256: [u8; 32] = [..];
 //! /// `true` for a test setup whose secret randomness is public or untrusted ...
 //! pub const VERIFYINGKEY_INSECURE_TEST_SETUP: bool = false;
 //! /// The two values above as a delimited string kept in the program binary.
 //! #[unsafe(export_name = "groth16_solana_vk_setup_<hash>")]
-//! pub static VERIFYINGKEY_SETUP_TXT: &str = "=======BEGIN GROTH16 VK SETUP V1=======\0..";
+//! pub static VERIFYINGKEY_SETUP_TXT: &str = "=======BEGIN GROTH16 VK SETUP V2=======\0..";
 //! ```
 //!
-//! A prover compares [`proving_key_sha256`] of the proving key it is
-//! about to load against `*_PROVING_KEY_SHA256`, so a stale or
-//! mismatched key fails before proving starts.
+//! `*_VK_SHA256` identifies the verifying key independently of its
+//! source format: [`vk_sha256`] hashes the bytes the verifier uses, so
+//! a snarkjs `verification_key.json` and a gnark `vk.bin` of the same
+//! key hash alike. Anyone holding the vk (a ceremony transcript, the
+//! prover's key files, the generated const) recomputes it with
+//! [`vk_sha256`] and compares it to the value read from a deployed
+//! program.
 //!
 //! A [`SetupKind::InsecureTest`] vk also gets
 //! `#[cfg(not(feature = "insecure-test-setup"))] compile_error!(..)`:
@@ -33,13 +37,9 @@
 //! `.so` or from `solana program dump <PROGRAM_ID> program.so` after
 //! deployment. `strings program.so` shows the same fields.
 
-extern crate std;
-
 use sha2::{Digest, Sha256};
-use std::fs::File;
-use std::io::{self, Read};
-use std::path::Path;
 
+use crate::groth16::Groth16Verifyingkey;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -62,45 +62,43 @@ pub enum SetupKind {
     Production,
 }
 
-/// The proving key whose SHA-256 goes into the generated
-/// `*_PROVING_KEY_SHA256` const.
-#[derive(Debug, Clone, Copy)]
-pub enum ProvingKeySource<'a> {
-    /// Hash this file (streamed, so multi-GB keys are fine). Preferred:
-    /// the digest is computed from the key next to the vk.
-    File(&'a Path),
-    /// A precomputed SHA-256, e.g. from a lockfile, for build scripts
-    /// that do not have the proving key on disk.
-    Sha256([u8; 32]),
-}
-
-impl ProvingKeySource<'_> {
-    pub(crate) fn sha256(&self) -> io::Result<[u8; 32]> {
-        match self {
-            ProvingKeySource::File(path) => proving_key_sha256(path),
-            ProvingKeySource::Sha256(digest) => Ok(*digest),
+/// SHA-256 of `vk` over this encoding (integers big-endian, points in
+/// the verifier's uncompressed big-endian layout):
+///
+/// ```text
+/// nr_pubinputs  u64
+/// vk_alpha_g1   64 bytes
+/// vk_beta_g2    128 bytes
+/// vk_gamma_g2   128 bytes
+/// vk_delta_g2   128 bytes
+/// vk_ic.len()   u64
+/// vk_ic[i]      64 bytes each
+/// 0x00                                   without a commitment key
+/// 0x01 || g2 || g_sigma_neg_g2           with one (128 bytes each)
+/// ```
+///
+/// The generators write this digest as `<NAME>_VK_SHA256`, so
+/// `vk_sha256(&NAME) == NAME_VK_SHA256` holds for every generated const.
+pub fn vk_sha256(vk: &Groth16Verifyingkey<'_>) -> [u8; 32] {
+    let mut hasher = Sha256::new()
+        .chain_update((vk.nr_pubinputs as u64).to_be_bytes())
+        .chain_update(vk.vk_alpha_g1)
+        .chain_update(vk.vk_beta_g2)
+        .chain_update(vk.vk_gamma_g2)
+        .chain_update(vk.vk_delta_g2)
+        .chain_update((vk.vk_ic.len() as u64).to_be_bytes());
+    for point in vk.vk_ic {
+        hasher.update(point);
+    }
+    match &vk.vk_commitment {
+        None => hasher.update([0u8]),
+        Some(ck) => {
+            hasher.update([1u8]);
+            hasher.update(ck.g2);
+            hasher.update(ck.g_sigma_neg_g2);
         }
     }
-}
-
-/// SHA-256 of the file at `path`, streamed in 64 KiB chunks. The
-/// digest covers the file bytes as serialized: gnark `pk.WriteTo` and
-/// `pk.WriteRawTo` of the same key hash differently.
-pub fn proving_key_sha256(path: impl AsRef<Path>) -> io::Result<[u8; 32]> {
-    let mut file = File::open(path.as_ref())?;
-    let mut hasher = Sha256::new();
-    let mut buf = [0u8; 64 * 1024];
-    loop {
-        let n = file.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        let chunk = buf.get(..n).ok_or_else(|| {
-            io::Error::new(io::ErrorKind::InvalidData, "read returned too many bytes")
-        })?;
-        hasher.update(chunk);
-    }
-    Ok(hasher.finalize().into())
+    hasher.finalize().into()
 }
 
 /// Whether `vk_delta_g2 == vk_gamma_g2`. snarkjs `groth16 setup`
@@ -128,13 +126,13 @@ pub(crate) fn header_warning(setup: SetupKind) -> &'static str {
 }
 
 /// Opening delimiter of a `*_SETUP_TXT` string.
-pub const SETUP_TXT_BEGIN: &str = "=======BEGIN GROTH16 VK SETUP V1=======\0";
+pub const SETUP_TXT_BEGIN: &str = "=======BEGIN GROTH16 VK SETUP V2=======\0";
 /// Closing delimiter of a `*_SETUP_TXT` string.
-pub const SETUP_TXT_END: &str = "=======END GROTH16 VK SETUP V1=======\0";
+pub const SETUP_TXT_END: &str = "=======END GROTH16 VK SETUP V2=======\0";
 
 const FIELD_NAME: &str = "name";
 const FIELD_INSECURE_TEST_SETUP: &str = "insecure_test_setup";
-const FIELD_PROVING_KEY_SHA256: &str = "proving_key_sha256";
+const FIELD_VK_SHA256: &str = "vk_sha256";
 
 /// Setup metadata of one verifying key, read back from a binary.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -142,17 +140,18 @@ pub struct SetupTxt {
     /// The generated const's name, e.g. `VERIFYINGKEY`.
     pub name: String,
     pub insecure_test_setup: bool,
-    pub proving_key_sha256: [u8; 32],
+    /// [`vk_sha256`] of the verifying key.
+    pub vk_sha256: [u8; 32],
 }
 
 impl SetupTxt {
     fn to_marker(&self) -> String {
         format!(
             "{SETUP_TXT_BEGIN}{FIELD_NAME}\0{}\0{FIELD_INSECURE_TEST_SETUP}\0{}\0\
-             {FIELD_PROVING_KEY_SHA256}\0{}\0{SETUP_TXT_END}",
+             {FIELD_VK_SHA256}\0{}\0{SETUP_TXT_END}",
             self.name,
             self.insecure_test_setup,
-            to_hex(&self.proving_key_sha256)
+            to_hex(&self.vk_sha256)
         )
     }
 }
@@ -208,15 +207,15 @@ fn parse_body(body: &[u8], offset: usize) -> Result<SetupTxt, SetupTxtError> {
         "false" => false,
         _ => return Err(malformed("insecure_test_setup is not true/false")),
     };
-    let proving_key_sha256 = from_hex(field(FIELD_PROVING_KEY_SHA256)?)
-        .ok_or_else(|| malformed("proving_key_sha256 is not 64 hex digits"))?;
+    let vk_sha256 = from_hex(field(FIELD_VK_SHA256)?)
+        .ok_or_else(|| malformed("vk_sha256 is not 64 hex digits"))?;
     if parts.next() != Some("") || parts.next().is_some() {
         return Err(malformed("unexpected trailing fields"));
     }
     Ok(SetupTxt {
         name,
         insecure_test_setup,
-        proving_key_sha256,
+        vk_sha256,
     })
 }
 
@@ -241,7 +240,16 @@ fn from_hex(s: &str) -> Option<[u8; 32]> {
     Some(out)
 }
 
-/// Rust source for the `<const_name>_PROVING_KEY_SHA256`,
+/// `bytes` as a Rust array body: `1u8, 2u8, ..`.
+pub(crate) fn byte_list(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|b| format!("{}u8", b))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Rust source for the `<const_name>_VK_SHA256`,
 /// `<const_name>_INSECURE_TEST_SETUP` and `<const_name>_SETUP_TXT`
 /// items, plus the compile guard for [`SetupKind::InsecureTest`].
 /// `vk_source` is the generated vk code; hashing it into the export
@@ -251,18 +259,14 @@ pub(crate) fn metadata_rust_source(
     vk_source: &str,
     const_name: &str,
     setup: SetupKind,
-    proving_key_sha256: &[u8; 32],
+    vk_sha256: &[u8; 32],
 ) -> String {
-    let digest = proving_key_sha256
-        .iter()
-        .map(|b| format!("{}u8", b))
-        .collect::<Vec<_>>()
-        .join(", ");
+    let digest = byte_list(vk_sha256);
     let insecure = setup == SetupKind::InsecureTest;
     let marker = SetupTxt {
         name: const_name.to_string(),
         insecure_test_setup: insecure,
-        proving_key_sha256: *proving_key_sha256,
+        vk_sha256: *vk_sha256,
     }
     .to_marker();
     let symbol_hash: [u8; 32] = Sha256::new()
@@ -280,10 +284,13 @@ pub(crate) fn metadata_rust_source(
     let marker_literal = marker.replace('\0', "\\x00");
 
     let mut out = String::new();
-    out.push_str("\n/// SHA-256 of the proving key file this verifying key was generated with.\n");
+    out.push_str(&format!(
+        "\n/// SHA-256 of `{const_name}`, as encoded by\n\
+         /// `groth16_solana::vk::setup::vk_sha256`.\n"
+    ));
     out.push_str("#[allow(dead_code)]\n#[rustfmt::skip]\n");
     out.push_str(&format!(
-        "pub const {const_name}_PROVING_KEY_SHA256: [u8; 32] = [{digest}];\n"
+        "pub const {const_name}_VK_SHA256: [u8; 32] = [{digest}];\n"
     ));
     out.push_str(
         "\n/// `true` for a test setup whose secret randomness is public or untrusted:\n\
@@ -318,63 +325,108 @@ pub(crate) fn metadata_rust_source(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn temp_file(name: &str, contents: &[u8]) -> std::path::PathBuf {
-        let path = std::env::temp_dir().join(format!(
-            "groth16-solana-setup-{}-{}",
-            std::process::id(),
-            name
-        ));
-        std::fs::write(&path, contents).unwrap();
-        path
-    }
+    use crate::groth16::CommitmentVerifyingKey;
+    use alloc::vec;
 
     fn setup_txt(name: &str, insecure: bool, fill: u8) -> SetupTxt {
         SetupTxt {
             name: name.to_string(),
             insecure_test_setup: insecure,
-            proving_key_sha256: [fill; 32],
+            vk_sha256: [fill; 32],
+        }
+    }
+
+    const IC: [[u8; 64]; 2] = [[5u8; 64], [6u8; 64]];
+    const COMMITMENT: CommitmentVerifyingKey = CommitmentVerifyingKey {
+        g2: [7u8; 128],
+        g_sigma_neg_g2: [8u8; 128],
+    };
+
+    fn test_vk(vk_commitment: Option<CommitmentVerifyingKey>) -> Groth16Verifyingkey<'static> {
+        Groth16Verifyingkey {
+            nr_pubinputs: 1,
+            vk_alpha_g1: [1u8; 64],
+            vk_beta_g2: [2u8; 128],
+            vk_gamma_g2: [3u8; 128],
+            vk_delta_g2: [4u8; 128],
+            vk_ic: &IC,
+            vk_commitment,
         }
     }
 
     #[test]
-    fn proving_key_sha256_matches_known_vector() {
-        // FIPS 180-2 "abc" test vector.
-        let path = temp_file("abc", b"abc");
-        let digest = proving_key_sha256(&path).unwrap();
-        std::fs::remove_file(&path).unwrap();
-        let expected: [u8; 32] = [
-            0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae,
-            0x22, 0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61,
-            0xf2, 0x00, 0x15, 0xad,
+    fn vk_sha256_matches_documented_encoding() {
+        let fixed = [
+            &1u64.to_be_bytes()[..],
+            &[1u8; 64],
+            &[2u8; 128],
+            &[3u8; 128],
+            &[4u8; 128],
+            &2u64.to_be_bytes(),
+            &[5u8; 64],
+            &[6u8; 64],
+        ]
+        .concat();
+        let plain = [&fixed[..], &[0]].concat();
+        let with_commitment = [&fixed[..], &[1], &[7u8; 128], &[8u8; 128]].concat();
+
+        assert_eq!(
+            vk_sha256(&test_vk(None)),
+            <[u8; 32]>::from(Sha256::digest(&plain))
+        );
+        assert_eq!(
+            vk_sha256(&test_vk(Some(COMMITMENT))),
+            <[u8; 32]>::from(Sha256::digest(&with_commitment))
+        );
+    }
+
+    #[test]
+    fn vk_sha256_changes_with_every_field() {
+        let one_ic = [[5u8; 64]];
+        let other_ic = [[5u8; 64], [9u8; 64]];
+        let mut variants = vec![
+            test_vk(None),
+            test_vk(Some(COMMITMENT)),
+            test_vk(Some(CommitmentVerifyingKey {
+                g2: [9u8; 128],
+                ..COMMITMENT
+            })),
+            test_vk(Some(CommitmentVerifyingKey {
+                g_sigma_neg_g2: [9u8; 128],
+                ..COMMITMENT
+            })),
         ];
-        assert_eq!(digest, expected);
-    }
+        let mutations: [fn(&mut Groth16Verifyingkey<'static>); 5] = [
+            |vk| vk.nr_pubinputs = 2,
+            |vk| vk.vk_alpha_g1[63] ^= 1,
+            |vk| vk.vk_beta_g2[127] ^= 1,
+            |vk| vk.vk_gamma_g2[127] ^= 1,
+            |vk| vk.vk_delta_g2[127] ^= 1,
+        ];
+        for mutate in mutations {
+            let mut vk = test_vk(Some(COMMITMENT));
+            mutate(&mut vk);
+            variants.push(vk);
+        }
+        let mut vk = test_vk(None);
+        vk.vk_ic = &one_ic;
+        variants.push(vk);
+        let mut vk = test_vk(None);
+        vk.vk_ic = &other_ic;
+        variants.push(vk);
 
-    #[test]
-    fn proving_key_sha256_streams_across_chunks() {
-        // 64 KiB chunks: 200_001 bytes spans four reads with a partial tail.
-        let contents: Vec<u8> = (0..200_001u32).map(|i| (i % 251) as u8).collect();
-        let path = temp_file("chunks", &contents);
-        let digest = proving_key_sha256(&path).unwrap();
-        std::fs::remove_file(&path).unwrap();
-        let expected: [u8; 32] = Sha256::digest(&contents).into();
-        assert_eq!(digest, expected);
-    }
-
-    #[test]
-    fn proving_key_sha256_reports_missing_file() {
-        let err = proving_key_sha256("/nonexistent/pk.bin").unwrap_err();
-        assert_eq!(err.kind(), io::ErrorKind::NotFound);
+        let digests: std::collections::BTreeSet<[u8; 32]> =
+            variants.iter().map(vk_sha256).collect();
+        assert_eq!(digests.len(), variants.len());
     }
 
     #[test]
     fn metadata_marks_insecure_test_setup_with_compile_guard() {
         let src = metadata_rust_source("", "VK", SetupKind::InsecureTest, &[7u8; 32]);
-        assert!(src.contains("pub const VK_PROVING_KEY_SHA256: [u8; 32] = [7u8, 7u8,"));
+        assert!(src.contains("pub const VK_VK_SHA256: [u8; 32] = [7u8, 7u8,"));
         assert!(src.contains("pub const VK_INSECURE_TEST_SETUP: bool = true;"));
         assert!(src.contains(
-            "pub static VK_SETUP_TXT: &str = \"=======BEGIN GROTH16 VK SETUP V1=======\\x00name\\x00VK\\x00insecure_test_setup\\x00true\\x00proving_key_sha256\\x000707"
+            "pub static VK_SETUP_TXT: &str = \"=======BEGIN GROTH16 VK SETUP V2=======\\x00name\\x00VK\\x00insecure_test_setup\\x00true\\x00vk_sha256\\x000707"
         ));
         assert!(src.contains("#[cfg(not(feature = \"insecure-test-setup\"))]\ncompile_error!("));
     }
@@ -435,7 +487,7 @@ mod tests {
         let good = setup_txt("VK", true, 0x11).to_marker();
         for bad in [
             good.replace("insecure_test_setup\0true", "insecure_test_setup\0yes"),
-            good.replace("proving_key_sha256\0", "proving_key_sha256\0zz"),
+            good.replace("vk_sha256\0", "vk_sha256\0zz"),
             good.replace("name\0", "label\0"),
             good.replace(SETUP_TXT_END, &format!("extra\0field\0{SETUP_TXT_END}")),
         ] {

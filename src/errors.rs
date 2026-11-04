@@ -50,9 +50,9 @@ pub enum Groth16Error {
     #[cfg(feature = "gnark-vk")]
     #[error("Bsb22CommittedPublicInputsUnsupported")]
     Bsb22CommittedPublicInputsUnsupported,
-    /// Reading the vk.bin or proving key, or writing the generated Rust
-    /// file, failed in `generate_bsb22_vk_file` — a filesystem problem
-    /// (wrong path, permissions), not a malformed verifying key.
+    /// Reading the vk.bin, or writing the generated Rust file, failed
+    /// in `generate_bsb22_vk_file` — a filesystem problem (wrong path,
+    /// permissions), not a malformed verifying key.
     #[cfg(feature = "gnark-vk")]
     #[error("Bsb22VkFileIoFailed")]
     Bsb22VkFileIoFailed,

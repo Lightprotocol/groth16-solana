@@ -21,8 +21,7 @@ default = ["insecure-test-setup"]
 insecure-test-setup = []
 
 [dev-dependencies]
-# Test-only: vk::setup::proving_key_sha256 checks the zkey against the
-# baked vk before proving.
+# Test-only: vk::setup::vk_sha256 recomputes the baked vk's digest.
 groth16-solana = { path = "../..", features = ["circom-vk"] }
 
 [build-dependencies]

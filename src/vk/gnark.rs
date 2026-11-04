@@ -42,7 +42,7 @@ extern crate std;
 use crate::errors::Groth16Error;
 use crate::groth16::{CommitmentVerifyingKey, Groth16Verifyingkey};
 #[cfg(not(target_os = "solana"))]
-use crate::vk::setup::{self, ProvingKeySource, SetupKind};
+use crate::vk::setup::{self, byte_list, SetupKind};
 #[cfg(not(target_os = "solana"))]
 use alloc::format;
 #[cfg(not(target_os = "solana"))]
@@ -200,15 +200,6 @@ pub fn parse_gnark_vk_bytes(bytes: &[u8]) -> Result<Groth16VerifyingkeyOwned, Gr
 // Build-script helper: emit a Groth16Verifyingkey const from gnark vk.bin
 // =============================================================================
 
-#[cfg(not(target_os = "solana"))]
-fn byte_list(bytes: &[u8]) -> String {
-    bytes
-        .iter()
-        .map(|b| format!("{}u8", b))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
 /// Emit a Rust source string containing a `pub const VERIFYINGKEY:
 /// Groth16Verifyingkey = …;` declaration built from a parsed
 /// [`Groth16VerifyingkeyOwned`]. Used by downstream programs that
@@ -219,7 +210,7 @@ fn byte_list(bytes: &[u8]) -> String {
 /// The generated source also includes the necessary `use
 /// groth16_solana::groth16::…` import(s) so it can be `include!`d
 /// directly into a downstream program's `src/verifying_key.rs`, and
-/// the `<const_name>_PROVING_KEY_SHA256` and
+/// the `<const_name>_VK_SHA256` and
 /// `<const_name>_INSECURE_TEST_SETUP` consts (see [`crate::vk::setup`]).
 ///
 /// Returns [`Groth16Error::ForgeableProductionVk`] when `setup` is
@@ -238,7 +229,6 @@ fn bsb22_vk_to_rust_const(
     vk: &Groth16VerifyingkeyOwned,
     const_name: &str,
     setup: SetupKind,
-    proving_key_sha256: &[u8; 32],
 ) -> Result<String, Groth16Error> {
     if setup == SetupKind::Production && setup::delta_equals_gamma(&vk.vk_gamma_g2, &vk.vk_delta_g2)
     {
@@ -309,20 +299,20 @@ fn bsb22_vk_to_rust_const(
     }
 
     out.push_str("};\n");
-    let metadata = setup::metadata_rust_source(&out, const_name, setup, proving_key_sha256);
+    let vk_sha256 = setup::vk_sha256(&vk.as_borrowed());
+    let metadata = setup::metadata_rust_source(&out, const_name, setup, &vk_sha256);
     out.push_str(&metadata);
     Ok(out)
 }
 
 /// Parse a gnark vk.bin file and write a Rust source file declaring
 /// `pub const <const_name>: Groth16Verifyingkey` matching it, plus the
-/// `<const_name>_PROVING_KEY_SHA256` and `<const_name>_INSECURE_TEST_SETUP`
+/// `<const_name>_VK_SHA256` and `<const_name>_INSECURE_TEST_SETUP`
 /// consts (see [`crate::vk::setup`]). Typical use is from a downstream
 /// program's `build.rs` or xtask command:
 ///
 /// ```rust,ignore
-/// use groth16_solana::vk::setup::{ProvingKeySource, SetupKind};
-/// use std::path::Path;
+/// use groth16_solana::vk::setup::SetupKind;
 ///
 /// fn main() {
 ///     let out_dir = std::env::var("OUT_DIR").unwrap();
@@ -332,7 +322,6 @@ fn bsb22_vk_to_rust_const(
 ///         "verifying_key.rs",
 ///         "VERIFYINGKEY",
 ///         SetupKind::Production,
-///         ProvingKeySource::File(Path::new("fixtures/pk.bin")),
 ///     ).unwrap();
 /// }
 /// ```
@@ -352,15 +341,11 @@ pub fn generate_bsb22_vk_file(
     output_filename: &str,
     const_name: &str,
     setup: SetupKind,
-    proving_key: ProvingKeySource<'_>,
 ) -> Result<(), Groth16Error> {
     let bytes =
         std::fs::read(input_path.as_ref()).map_err(|_| Groth16Error::Bsb22VkFileIoFailed)?;
     let vk = parse_gnark_vk_bytes(&bytes)?;
-    let proving_key_sha256 = proving_key
-        .sha256()
-        .map_err(|_| Groth16Error::Bsb22VkFileIoFailed)?;
-    let rust = bsb22_vk_to_rust_const(&vk, const_name, setup, &proving_key_sha256)?;
+    let rust = bsb22_vk_to_rust_const(&vk, const_name, setup)?;
     std::fs::create_dir_all(output_dir.as_ref()).map_err(|_| Groth16Error::Bsb22VkFileIoFailed)?;
     let out_path = output_dir.as_ref().join(output_filename);
     std::fs::write(&out_path, rust).map_err(|_| Groth16Error::Bsb22VkFileIoFailed)?;
@@ -506,8 +491,7 @@ mod tests {
         let bytes = VK_BYTES;
         let vk = parse_gnark_vk_bytes(bytes).unwrap();
         // The fixture comes from a seeded gnark setup.
-        let src = bsb22_vk_to_rust_const(&vk, "VERIFYINGKEY", SetupKind::InsecureTest, &[9u8; 32])
-            .unwrap();
+        let src = bsb22_vk_to_rust_const(&vk, "VERIFYINGKEY", SetupKind::InsecureTest).unwrap();
         // Spot-check the shape without pinning exact whitespace: the
         // generated source must include the const declaration, the
         // nr_pubinputs value, and both commitment-key fields.
@@ -522,7 +506,7 @@ mod tests {
         assert_eq!(src.matches("    [").count(), 3);
         // Setup metadata: warning header, both consts, compile guard.
         assert!(src.contains("// INSECURE TEST SETUP:"));
-        assert!(src.contains("pub const VERIFYINGKEY_PROVING_KEY_SHA256: [u8; 32] = [9u8,"));
+        assert!(src.contains(&vk_sha256_const(&vk)));
         assert!(src.contains("pub const VERIFYINGKEY_INSECURE_TEST_SETUP: bool = true;"));
         assert!(src.contains("#[cfg(not(feature = \"insecure-test-setup\"))]"));
     }
@@ -530,8 +514,7 @@ mod tests {
     #[test]
     fn bsb22_vk_to_rust_const_production_has_no_guard() {
         let vk = parse_gnark_vk_bytes(VK_BYTES).unwrap();
-        let src =
-            bsb22_vk_to_rust_const(&vk, "VERIFYINGKEY", SetupKind::Production, &[9u8; 32]).unwrap();
+        let src = bsb22_vk_to_rust_const(&vk, "VERIFYINGKEY", SetupKind::Production).unwrap();
         assert!(src.contains("pub const VERIFYINGKEY_INSECURE_TEST_SETUP: bool = false;"));
         assert!(!src.contains("INSECURE TEST SETUP:"));
         assert!(!src.contains("compile_error!"));
@@ -542,8 +525,7 @@ mod tests {
         // Delta still at gamma: no phase-2 contribution, forgeable.
         let mut vk = parse_gnark_vk_bytes(VK_BYTES).unwrap();
         vk.vk_delta_g2 = vk.vk_gamma_g2;
-        let err = bsb22_vk_to_rust_const(&vk, "VERIFYINGKEY", SetupKind::Production, &[9u8; 32])
-            .unwrap_err();
+        let err = bsb22_vk_to_rust_const(&vk, "VERIFYINGKEY", SetupKind::Production).unwrap_err();
         assert_eq!(err, Groth16Error::ForgeableProductionVk);
     }
 
@@ -551,8 +533,7 @@ mod tests {
     fn bsb22_vk_to_rust_const_accepts_insecure_test_vk_with_delta_equal_gamma() {
         let mut vk = parse_gnark_vk_bytes(VK_BYTES).unwrap();
         vk.vk_delta_g2 = vk.vk_gamma_g2;
-        let src = bsb22_vk_to_rust_const(&vk, "VERIFYINGKEY", SetupKind::InsecureTest, &[9u8; 32])
-            .unwrap();
+        let src = bsb22_vk_to_rust_const(&vk, "VERIFYINGKEY", SetupKind::InsecureTest).unwrap();
         assert!(src.contains("pub const VERIFYINGKEY_INSECURE_TEST_SETUP: bool = true;"));
     }
 
@@ -567,10 +548,17 @@ mod tests {
         path
     }
 
+    /// The `VERIFYINGKEY_VK_SHA256` line the generator writes for `vk`.
+    fn vk_sha256_const(vk: &Groth16VerifyingkeyOwned) -> String {
+        format!(
+            "pub const VERIFYINGKEY_VK_SHA256: [u8; 32] = [{}];",
+            byte_list(&setup::vk_sha256(&vk.as_borrowed()))
+        )
+    }
+
     #[test]
-    fn generate_bsb22_vk_file_pins_proving_key_sha256() {
+    fn generate_bsb22_vk_file_pins_vk_sha256() {
         let vk_path = temp_file("pin_vk.bin", VK_BYTES);
-        let pk_path = temp_file("pin_pk.bin", b"abc");
         let out_name = format!("groth16-solana-gnark-{}-pin.rs", std::process::id());
         generate_bsb22_vk_file(
             &vk_path,
@@ -578,34 +566,15 @@ mod tests {
             &out_name,
             "VERIFYINGKEY",
             SetupKind::InsecureTest,
-            ProvingKeySource::File(&pk_path),
         )
         .unwrap();
         let out_path = std::env::temp_dir().join(&out_name);
         let src = std::fs::read_to_string(&out_path).unwrap();
-        for path in [&vk_path, &pk_path, &out_path] {
+        for path in [&vk_path, &out_path] {
             std::fs::remove_file(path).unwrap();
         }
-        // SHA-256("abc"), FIPS 180-2.
-        assert!(src.contains(
-            "pub const VERIFYINGKEY_PROVING_KEY_SHA256: [u8; 32] = [186u8, 120u8, 22u8, 191u8,"
-        ));
-    }
-
-    #[test]
-    fn generate_bsb22_vk_file_reports_io_error_for_missing_proving_key() {
-        let vk_path = temp_file("missing_pk_vk.bin", VK_BYTES);
-        let err = generate_bsb22_vk_file(
-            &vk_path,
-            std::env::temp_dir(),
-            "verifying_key.rs",
-            "VERIFYINGKEY",
-            SetupKind::InsecureTest,
-            ProvingKeySource::File(std::path::Path::new("/nonexistent/pk.bin")),
-        )
-        .unwrap_err();
-        std::fs::remove_file(&vk_path).unwrap();
-        assert_eq!(err, Groth16Error::Bsb22VkFileIoFailed);
+        let vk = parse_gnark_vk_bytes(VK_BYTES).unwrap();
+        assert!(src.contains(&vk_sha256_const(&vk)));
     }
 
     #[test]
@@ -643,7 +612,6 @@ mod tests {
             "verifying_key.rs",
             "VERIFYINGKEY",
             SetupKind::InsecureTest,
-            ProvingKeySource::Sha256([0u8; 32]),
         )
         .unwrap_err();
         assert_eq!(err, Groth16Error::Bsb22VkFileIoFailed);
