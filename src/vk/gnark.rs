@@ -42,7 +42,7 @@ extern crate std;
 use crate::errors::Groth16Error;
 use crate::groth16::{CommitmentVerifyingKey, Groth16Verifyingkey};
 #[cfg(not(target_os = "solana"))]
-use crate::vk::setup::{self, SetupKind};
+use crate::vk::setup::{self, byte_list, SetupKind};
 #[cfg(not(target_os = "solana"))]
 use alloc::format;
 #[cfg(not(target_os = "solana"))]
@@ -199,15 +199,6 @@ pub fn parse_gnark_vk_bytes(bytes: &[u8]) -> Result<Groth16VerifyingkeyOwned, Gr
 // =============================================================================
 // Build-script helper: emit a Groth16Verifyingkey const from gnark vk.bin
 // =============================================================================
-
-#[cfg(not(target_os = "solana"))]
-fn byte_list(bytes: &[u8]) -> String {
-    bytes
-        .iter()
-        .map(|b| format!("{}u8", b))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
 
 /// Emit a Rust source string containing a `pub const VERIFYINGKEY:
 /// Groth16Verifyingkey = …;` declaration built from a parsed

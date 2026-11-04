@@ -145,8 +145,7 @@ first.
     compile/prove/verify smoke test
 12. Go: `TestHashToFieldGoldenVectors` — prints the golden vectors
     baked into `src/hash_to_field.rs`
-13. Go: `TestGenerateIsDeterministic` — bench-generator determinism,
-    proving keys included
+13. Go: `TestGenerateIsDeterministic` — bench-generator determinism
 
 ### Mollusk program tests (tests/program, requires Go + Solana toolchain)
 

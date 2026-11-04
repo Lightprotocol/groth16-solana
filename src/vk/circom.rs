@@ -209,13 +209,7 @@ pub fn parse_vk_json_to_rust_string(
         let bytes = process_g1_component(component)?;
         alpha_bytes.extend_from_slice(&bytes);
     }
-    output.push_str(
-        &alpha_bytes
-            .iter()
-            .map(|b| format!("{}u8", b))
-            .collect::<Vec<_>>()
-            .join(", "),
-    );
+    output.push_str(&setup::byte_list(&alpha_bytes));
     output.push_str("],\n\n");
 
     // Process vk_beta_g2 - flat [u8; 128]
@@ -226,13 +220,7 @@ pub fn parse_vk_json_to_rust_string(
         beta_bytes.extend_from_slice(&part0);
         beta_bytes.extend_from_slice(&part1);
     }
-    output.push_str(
-        &beta_bytes
-            .iter()
-            .map(|b| format!("{}u8", b))
-            .collect::<Vec<_>>()
-            .join(", "),
-    );
+    output.push_str(&setup::byte_list(&beta_bytes));
     output.push_str("],\n\n");
 
     // Process vk_gamma_g2 - flat [u8; 128]
@@ -243,13 +231,7 @@ pub fn parse_vk_json_to_rust_string(
         gamma_bytes.extend_from_slice(&part0);
         gamma_bytes.extend_from_slice(&part1);
     }
-    output.push_str(
-        &gamma_bytes
-            .iter()
-            .map(|b| format!("{}u8", b))
-            .collect::<Vec<_>>()
-            .join(", "),
-    );
+    output.push_str(&setup::byte_list(&gamma_bytes));
     output.push_str("],\n\n");
 
     // Process vk_delta_g2 - flat [u8; 128]
@@ -263,37 +245,20 @@ pub fn parse_vk_json_to_rust_string(
     if setup == SetupKind::Production && setup::delta_equals_gamma(&gamma_bytes, &delta_bytes) {
         return Err(VkParseError::ForgeableProductionVk);
     }
-    output.push_str(
-        &delta_bytes
-            .iter()
-            .map(|b| format!("{}u8", b))
-            .collect::<Vec<_>>()
-            .join(", "),
-    );
+    output.push_str(&setup::byte_list(&delta_bytes));
     output.push_str("],\n\n");
 
     // Process vk_ic - &[[u8; 64]]
     output.push_str("\tvk_ic: &[\n");
     let mut ic = Vec::with_capacity(raw_vk.ic.len());
     for (point_index, point) in raw_vk.ic.iter().enumerate() {
-        output.push_str("\t\t[");
+        let label = format!("IC[{}]", point_index);
         let mut point_bytes = Vec::new();
-        for component in affine_components(point, &format!("IC[{}]", point_index))? {
-            let bytes = process_g1_component(component)?;
-            point_bytes.extend_from_slice(&bytes);
+        for component in affine_components(point, &label)? {
+            point_bytes.extend_from_slice(&process_g1_component(component)?);
         }
-        output.push_str(
-            &point_bytes
-                .iter()
-                .map(|b| format!("{}u8", b))
-                .collect::<Vec<_>>()
-                .join(", "),
-        );
-        output.push_str("],\n");
-        ic.push(fixed_size::<64>(
-            &point_bytes,
-            &format!("IC[{}]", point_index),
-        )?);
+        output.push_str(&format!("\t\t[{}],\n", setup::byte_list(&point_bytes)));
+        ic.push(fixed_size(&point_bytes, &label)?);
     }
     output.push_str("\t],\n\n");
 

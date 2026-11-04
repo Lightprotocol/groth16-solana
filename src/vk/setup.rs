@@ -240,6 +240,15 @@ fn from_hex(s: &str) -> Option<[u8; 32]> {
     Some(out)
 }
 
+/// `bytes` as a Rust array body: `1u8, 2u8, ..`.
+pub(crate) fn byte_list(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|b| format!("{}u8", b))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// Rust source for the `<const_name>_VK_SHA256`,
 /// `<const_name>_INSECURE_TEST_SETUP` and `<const_name>_SETUP_TXT`
 /// items, plus the compile guard for [`SetupKind::InsecureTest`].
@@ -252,11 +261,7 @@ pub(crate) fn metadata_rust_source(
     setup: SetupKind,
     vk_sha256: &[u8; 32],
 ) -> String {
-    let digest = vk_sha256
-        .iter()
-        .map(|b| format!("{}u8", b))
-        .collect::<Vec<_>>()
-        .join(", ");
+    let digest = byte_list(vk_sha256);
     let insecure = setup == SetupKind::InsecureTest;
     let marker = SetupTxt {
         name: const_name.to_string(),
@@ -351,22 +356,19 @@ mod tests {
 
     #[test]
     fn vk_sha256_matches_documented_encoding() {
-        let mut fixed = Vec::new();
-        fixed.extend_from_slice(&1u64.to_be_bytes());
-        fixed.extend_from_slice(&[1u8; 64]);
-        fixed.extend_from_slice(&[2u8; 128]);
-        fixed.extend_from_slice(&[3u8; 128]);
-        fixed.extend_from_slice(&[4u8; 128]);
-        fixed.extend_from_slice(&2u64.to_be_bytes());
-        fixed.extend_from_slice(&[5u8; 64]);
-        fixed.extend_from_slice(&[6u8; 64]);
-
-        let mut plain = fixed.clone();
-        plain.push(0);
-        let mut with_commitment = fixed;
-        with_commitment.push(1);
-        with_commitment.extend_from_slice(&[7u8; 128]);
-        with_commitment.extend_from_slice(&[8u8; 128]);
+        let fixed = [
+            &1u64.to_be_bytes()[..],
+            &[1u8; 64],
+            &[2u8; 128],
+            &[3u8; 128],
+            &[4u8; 128],
+            &2u64.to_be_bytes(),
+            &[5u8; 64],
+            &[6u8; 64],
+        ]
+        .concat();
+        let plain = [&fixed[..], &[0]].concat();
+        let with_commitment = [&fixed[..], &[1], &[7u8; 128], &[8u8; 128]].concat();
 
         assert_eq!(
             vk_sha256(&test_vk(None)),
@@ -382,23 +384,24 @@ mod tests {
     fn vk_sha256_changes_with_every_field() {
         let one_ic = [[5u8; 64]];
         let other_ic = [[5u8; 64], [9u8; 64]];
-        let mut variants = vec![test_vk(None), test_vk(Some(COMMITMENT))];
-        let mutations: [fn(&mut Groth16Verifyingkey<'static>); 7] = [
+        let mut variants = vec![
+            test_vk(None),
+            test_vk(Some(COMMITMENT)),
+            test_vk(Some(CommitmentVerifyingKey {
+                g2: [9u8; 128],
+                ..COMMITMENT
+            })),
+            test_vk(Some(CommitmentVerifyingKey {
+                g_sigma_neg_g2: [9u8; 128],
+                ..COMMITMENT
+            })),
+        ];
+        let mutations: [fn(&mut Groth16Verifyingkey<'static>); 5] = [
             |vk| vk.nr_pubinputs = 2,
             |vk| vk.vk_alpha_g1[63] ^= 1,
             |vk| vk.vk_beta_g2[127] ^= 1,
             |vk| vk.vk_gamma_g2[127] ^= 1,
             |vk| vk.vk_delta_g2[127] ^= 1,
-            |vk| {
-                if let Some(ck) = vk.vk_commitment.as_mut() {
-                    ck.g2[127] ^= 1;
-                }
-            },
-            |vk| {
-                if let Some(ck) = vk.vk_commitment.as_mut() {
-                    ck.g_sigma_neg_g2[127] ^= 1;
-                }
-            },
         ];
         for mutate in mutations {
             let mut vk = test_vk(Some(COMMITMENT));

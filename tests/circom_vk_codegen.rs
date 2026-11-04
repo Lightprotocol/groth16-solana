@@ -58,26 +58,25 @@ fn production_setup_emits_flag_without_compile_guard() {
     assert!(!src.contains("compile_error!"));
 }
 
-/// 32-byte big-endian encoding of a small integer.
-fn be32(v: u8) -> [u8; 32] {
-    let mut out = [0u8; 32];
-    out[31] = v;
-    out
-}
-
-fn concat<const N: usize>(parts: &[[u8; 32]]) -> [u8; N] {
-    parts.concat().try_into().unwrap()
+/// Each small integer as a 32-byte big-endian limb, concatenated.
+fn limbs<const N: usize>(values: &[u8]) -> [u8; N] {
+    values
+        .iter()
+        .flat_map(|&v| [0u8; 31].into_iter().chain([v]))
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap()
 }
 
 #[test]
 fn vk_sha256_const_matches_parsed_points() {
     // G1 (x, y) -> x || y; G2 ((x.c0, x.c1), (y.c0, y.c1)) ->
     // x.c1 || x.c0 || y.c1 || y.c0, the alt_bn128 syscall layout.
-    let g2 = concat::<128>(&[be32(2), be32(1), be32(4), be32(3)]);
-    let ic = [concat::<64>(&[be32(1), be32(2)])];
+    let g2 = limbs::<128>(&[2, 1, 4, 3]);
+    let ic = [limbs::<64>(&[1, 2])];
     let vk = Groth16Verifyingkey {
         nr_pubinputs: 0,
-        vk_alpha_g1: concat(&[be32(1), be32(2)]),
+        vk_alpha_g1: limbs(&[1, 2]),
         vk_beta_g2: g2,
         vk_gamma_g2: g2,
         vk_delta_g2: g2,
